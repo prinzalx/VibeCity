@@ -30,3 +30,10 @@ performs the same service-UUID discovery at OS level and exposes the dongle as
 an ordinary MIDI endpoint; pairing is optional ("do not pair unless the device
 requires it"). Our tool therefore contains no pairing logic: if the endpoint
 is missing in `list-ports`, suspect the PC Bluetooth adapter/driver first.
+
+## Wizard (dev tool)
+
+`vibecity wizard` runs R0→R1→R2→W1 interactively (port selection, snapshot
+file, set+readback, j/n/s per step) and writes `hardware-tests-results.md`
+next to the exe. The tables above stay the archive of record; the wizard is
+allowed to disappear from the final build.

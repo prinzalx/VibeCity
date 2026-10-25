@@ -120,7 +120,8 @@ impl Transport for MockTransport {
 
 #[cfg(windows)]
 pub mod winmm {
-    use super::{classify_port, PortInfo};
+    use super::{classify_port, PortInfo, Transport};
+    use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 
     /// List output ports via midir/WinMM (USB and BLE endpoints both appear
     /// there on Windows 10+, per docs/PROTOCOL.md).
@@ -135,6 +136,87 @@ pub mod winmm {
             });
         }
         Ok(out)
+    }
+
+    /// Real WinMM transport: SysEx out over one MIDI out port, inbound
+    /// SysEx frames reassembled from a MIDI in port of the same name.
+    pub struct WinMidiTransport {
+        sender: midir::MidiOutputConnection,
+        _in_conn: Option<midir::MidiInputConnection<RxState>>,
+        rx: Receiver<Vec<u8>>,
+    }
+
+    struct RxState {
+        tx: mpsc::Sender<Vec<u8>>,
+        acc: Vec<u8>,
+    }
+
+    impl WinMidiTransport {
+        pub fn open(port_name: &str) -> Result<Self, String> {
+            let (tx, rx) = mpsc::channel();
+
+            let mut mo = midir::MidiOutput::new("vibecity-out").map_err(|e| e.to_string())?;
+            let out_port = mo
+                .ports()
+                .into_iter()
+                .find(|p| mo.port_name(p).map(|n| n == port_name).unwrap_or(false))
+                .ok_or_else(|| format!("out port '{port_name}' not found"))?;
+            let sender = mo
+                .connect(&out_port, "vibecity")
+                .map_err(|e| e.to_string())?;
+
+            let mut mi = midir::MidiInput::new("vibecity-in").map_err(|e| e.to_string())?;
+            let in_port = mi
+                .ports()
+                .into_iter()
+                .find(|p| mi.port_name(p).map(|n| n == port_name).unwrap_or(false));
+
+            let in_conn = match in_port {
+                Some(port) => Some(
+                    mi.connect(
+                        &port,
+                        "vibecity",
+                        move |_ts, msg, st: &mut RxState| {
+                            // Reassemble SysEx frames across callback chunks;
+                            // pass short messages through as one-event frames.
+                            if msg[0] == 0xF0 {
+                                st.acc.extend_from_slice(msg);
+                                if msg.last() == Some(&0xF7) {
+                                    let _ = st.tx.send(std::mem::take(&mut st.acc));
+                                }
+                            } else {
+                                let _ = st.tx.send(msg.to_vec());
+                            }
+                        },
+                        RxState {
+                            tx: tx.clone(),
+                            acc: Vec::new(),
+                        },
+                    )
+                    .map_err(|e| e.to_string())?,
+                ),
+                None => None,
+            };
+
+            Ok(Self {
+                sender,
+                _in_conn: in_conn,
+                rx,
+            })
+        }
+    }
+
+    impl Transport for WinMidiTransport {
+        fn send(&mut self, frame: &[u8]) -> Result<(), String> {
+            self.sender.send(frame).map_err(|e| e.to_string())
+        }
+        fn recv(&mut self, timeout_ms: u32) -> Option<Vec<u8>> {
+            match self.rx.recv_timeout(std::time::Duration::from_millis(timeout_ms as u64)) {
+                Ok(v) => Some(v),
+                Err(RecvTimeoutError::Timeout) => None,
+                Err(RecvTimeoutError::Disconnected) => None,
+            }
+        }
     }
 }
 
