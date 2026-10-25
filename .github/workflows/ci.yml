@@ -1,0 +1,18 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --all-targets
+      - run: cargo build --release --target-dir C:/vctarget
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vibecity-windows-x64
+          path: C:/vctarget/release/vibecity.exe

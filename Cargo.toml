@@ -1,0 +1,19 @@
+[package]
+name = "vibecity"
+version = "0.1.0"
+edition = "2021"
+description = "Clean-room host tool for Casio PX-S1100 (protocol per docs/protocol.json)"
+license = "MIT"
+
+[dependencies]
+
+[target.'cfg(windows)'.dependencies]
+midir = "0.11"
+
+[[bin]]
+name = "vibecity"
+path = "src/main.rs"
+
+[lib]
+name = "vibecity"
+path = "src/lib.rs"
