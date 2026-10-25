@@ -21,11 +21,14 @@ pub const BULK_HEADER: [u8; 8] = [0xF0, 0x44, 0x17, 0x04, 0x7F, 0x03, 0x24, 0x01
 /// Bulk payload start offset (evidence).
 pub const OFF_BULK_PAYLOAD: usize = 12;
 
-/// Sub-command ids for "data" and "command" flavours of the parameter message.
-/// The numeric ids observed in the reference implementation were not
-/// extracted yet: [U] placeholders.
-pub const SUB_CMD_DATA: u16 = 0x0001; // [U]
-pub const SUB_CMD_COMMAND: u16 = 0x0002; // [U]
+/// Sub-command ids for the "data" and "command" flavours of the parameter
+/// message (evidence: link type 3/4 use 0xCE/0xCD, otherwise 0xD0/0xCF).
+pub const SUB_CMD_DATA: u16 = 0xD0; // evidence (non-3/4 link variant)
+pub const SUB_CMD_COMMAND: u16 = 0xCF; // evidence (non-3/4 link variant)
+
+/// Same ids for the link-type 3/4 variant (evidence).
+pub const SUB_CMD_DATA_LINK34: u16 = 0xCE;
+pub const SUB_CMD_COMMAND_LINK34: u16 = 0xCD;
 
 /// Session-enable command ids by link type (evidence).
 pub fn session_enable_cmd(link_type: u8) -> u8 {
@@ -112,7 +115,7 @@ mod tests {
         let m = build_param_msg(SUB_CMD_COMMAND, 0x2A, 0, 2);
         assert_eq!(m.len(), PARAM_MSG_LEN);
         assert_eq!(&m[..5], &HEADER);
-        assert_eq!(m[OFF_SUB_CMD], 0x02);
+        assert_eq!(m[OFF_SUB_CMD], 0xCF & 0x7f);
         assert_eq!(m[OFF_PAYLOAD], 0x2A & 0x7f);
         assert_eq!(m[PARAM_MSG_LEN - 1], 0xF7);
         let r = parse_param_msg(&m).unwrap();

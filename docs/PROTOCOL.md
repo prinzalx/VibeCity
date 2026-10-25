@@ -45,7 +45,7 @@ Legacy short path (device ids `0x19`/`0x1A`, commands `0xC4`/`0xC5`) exists on t
 Header bytes `F0 44 17 04 7F 03 24 01`, three zero bytes, payload starting at offset `0x0C`. **[E]**
 
 - 7-bit pair at `0x0A` (mode/selector argument), 7-bit pair for song number at `0x08`. **[E]**
-- **CRC-32** over the first `11 + payload_len` bytes starting at byte 1, appended after the payload as 5 × 7-bit, terminated by `F7`. **[E]** (CRC-32 polynomial/initialization values **[U]**)
+- **CRC-32** over the first `11 + payload_len` bytes starting at byte 1, appended after the payload as 5 × 7-bit, terminated by `F7`. **[E]** The implementation is a table-driven CRC-32 with init `0xFFFFFFFF` and final inversion (IEEE/zlib variant). **[E]**
 - No response wait for this family (one-way). **[E]**
 
 ### 2.3 Session-enable command ids
@@ -79,7 +79,7 @@ After each successful set/get the engine serializes the full value array as a **
 ## 7. Open questions for Phase 3 verification
 
 1. Name ↔ id map for the ESSENTIAL parameters (needs live capture or vendor table).
-2. CRC-32 variant used by the bulk family.
+2. ~~CRC-32 variant~~ resolved: table-driven IEEE CRC-32 (evidence).
 3. Exact header field split between offsets 0x05 and 0x11.
 4. Whether the legacy `0xC4/0xC5` short path needs a checksum.
 5. PX-S1100 model id and its persistence-file slot name.

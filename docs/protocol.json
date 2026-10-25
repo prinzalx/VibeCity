@@ -8,37 +8,94 @@
     "insert_sys_ex_length_on_close": true,
     "length_encoding": "7-bit groups, LSB group first, continuation bit 0x80 on all but last",
     "length_thresholds": [
-      [1, 128],
-      [2, 16384],
-      [3, 2097152],
-      [4, 268435456]
+      [
+        1,
+        128
+      ],
+      [
+        2,
+        16384
+      ],
+      [
+        3,
+        2097152
+      ],
+      [
+        4,
+        268435456
+      ]
     ],
     "status": "evidence"
   },
   "encodings": {
-    "u16_pair": { "bytes": 2, "bits_per_byte": 7, "order": "lsb-first", "status": "evidence" },
-    "u32_quintet": { "bytes": 5, "bits_per_byte": 7, "order": "lsb-first", "status": "evidence" }
+    "u16_pair": {
+      "bytes": 2,
+      "bits_per_byte": 7,
+      "order": "lsb-first",
+      "status": "evidence"
+    },
+    "u32_quintet": {
+      "bytes": 5,
+      "bits_per_byte": 7,
+      "order": "lsb-first",
+      "status": "evidence"
+    }
   },
   "messages": {
     "common_header": {
-      "bytes_hex": ["F0", "44", "17", "04", "7F"],
+      "bytes_hex": [
+        "F0",
+        "44",
+        "17",
+        "04",
+        "7F"
+      ],
       "byte3_link_types_3_4": "02",
       "model_id_written_by_helper": true,
       "status": "evidence"
     },
     "parameter_message": {
       "total_length": 30,
-      "terminator_at": { "offset": 29, "byte": "F7" },
-      "sub_command_at": { "offset": 18, "encoding": "u16_pair", "role": "names data vs command sub-commands" },
-      "payload_at": { "offset": 24, "encoding": "u32_quintet" },
-      "status_byte_at": { "offset": 24, "success_value": 1, "note": "shares buffer offset with payload region in receive parsing" },
+      "terminator_at": {
+        "offset": 29,
+        "byte": "F7"
+      },
+      "sub_command_at": {
+        "offset": 18,
+        "encoding": "u16_pair",
+        "role": "names data vs command sub-commands"
+      },
+      "payload_at": {
+        "offset": 24,
+        "encoding": "u32_quintet"
+      },
+      "status_byte_at": {
+        "offset": 24,
+        "success_value": 1,
+        "note": "shares buffer offset with payload region in receive parsing"
+      },
       "status": "evidence"
     },
     "bulk_parameter_set": {
       "direction": "host-to-device, one-way",
-      "header_hex": ["F0", "44", "17", "04", "7F", "03", "24", "01"],
+      "header_hex": [
+        "F0",
+        "44",
+        "17",
+        "04",
+        "7F",
+        "03",
+        "24",
+        "01"
+      ],
       "payload_start_offset": 12,
-      "checksum": { "algorithm": "crc32", "over_first_n": "11+payload_len from byte 1", "encoded_as": "u32_quintet", "variant": "unverified" },
+      "checksum": {
+        "algorithm": "crc32",
+        "variant": "IEEE (init 0xFFFFFFFF, final XOR, reflected table) \u2014 evidence",
+        "over_first_n": "11+payload_len from byte 1",
+        "encoded_as": "u32_quintet",
+        "status": "evidence"
+      },
       "status": "evidence"
     },
     "session_enable_command_ids": {
@@ -46,19 +103,53 @@
       "other": "0xB8",
       "status": "evidence"
     },
+    "sub_command_ids": {
+      "data": {
+        "default": "0xD0",
+        "link_type_3_or_4": "0xCE",
+        "status": "evidence"
+      },
+      "command": {
+        "default": "0xCF",
+        "link_type_3_or_4": "0xCD",
+        "status": "evidence"
+      }
+    },
     "legacy_short_path": {
-      "device_ids": ["0x19", "0x1A"],
-      "commands": ["0xC4", "0xC5"],
+      "device_ids": [
+        "0x19",
+        "0x1A"
+      ],
+      "commands": [
+        "0xC4",
+        "0xC5"
+      ],
       "checksum_required": "unverified",
       "status": "evidence"
     },
-    "send_device_ids": { "request": "0x19", "parameter_send": "0x1E", "status": "evidence" }
+    "send_device_ids": {
+      "request": "0x19",
+      "parameter_send": "0x1E",
+      "status": "evidence"
+    }
   },
   "handshake": {
     "poll_interval_ms": 2,
-    "timeout": { "value": 0.9, "unit": "seconds (inferred)", "status": "unverified" },
-    "result_states": { "set_ok": 2, "set_error": 3, "get_ok": 5, "get_error": 6 },
-    "read_value_is_delta_against_baseline_table": { "baseline_stride": 16, "status": "evidence" }
+    "timeout": {
+      "value": 0.9,
+      "unit": "seconds (inferred)",
+      "status": "unverified"
+    },
+    "result_states": {
+      "set_ok": 2,
+      "set_error": 3,
+      "get_ok": 5,
+      "get_error": 6
+    },
+    "read_value_is_delta_against_baseline_table": {
+      "baseline_stride": 16,
+      "status": "evidence"
+    }
   },
   "parameters": {
     "slot_width_bits": 16,
@@ -67,8 +158,19 @@
     "count_legacy_mx944_family": 232,
     "id_to_name_map": "unverified (live capture needed)",
     "essential_names": [
-      "reverb", "chorus", "brilliance", "transpose", "tuning", "temperament",
-      "layer", "split", "duet", "metronome", "touch_curve", "auto_power_off", "audio_bluetooth"
+      "reverb",
+      "chorus",
+      "brilliance",
+      "transpose",
+      "tuning",
+      "temperament",
+      "layer",
+      "split",
+      "duet",
+      "metronome",
+      "touch_curve",
+      "auto_power_off",
+      "audio_bluetooth"
     ]
   },
   "persistence": {
@@ -80,7 +182,6 @@
   },
   "open_questions": [
     "parameter name to id mapping",
-    "crc32 variant",
     "header field split offsets 0x05..0x11",
     "legacy short-path checksum",
     "PX-S1100 model id and file slot name"
