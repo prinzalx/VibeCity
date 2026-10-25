@@ -18,3 +18,15 @@ Runbook (user, Windows): run `vibecity list-ports`, then per gate the exact
 commands listed in the CLI section of the report; send back `logs/session-cli.log`
 plus any `monitor` capture. Device stays connected via USB cable for the first
 pass; BLE pass afterwards (dongle swap requires replug).
+
+### BLE connect behavior (evidence from the reference app + OS docs)
+
+The reference Android app scans actively for the standard BLE-MIDI GATT service
+UUID (`03B80E5A-EDE8-4B33-A751-6CE34EC4C700`) and connects via
+`MidiManager.openBluetoothDevice` **without any `createBond()` call** — the
+BLE-MIDI spec allows unbonded connections, which is why the phone never asked
+for pairing. On Windows the in-box "Bluetooth LE MIDI" driver (Win10 1703+)
+performs the same service-UUID discovery at OS level and exposes the dongle as
+an ordinary MIDI endpoint; pairing is optional ("do not pair unless the device
+requires it"). Our tool therefore contains no pairing logic: if the endpoint
+is missing in `list-ports`, suspect the PC Bluetooth adapter/driver first.
