@@ -10,7 +10,8 @@ Status legend: **[E]** evidence (observed in the shipped binary), **[U]** unveri
 
 ## 1. Transport
 
-- MIDI 1.0 over USB (class-compliant device port). **[E]** for the app path; **[U]** for exact Windows behavior.
+- MIDI 1.0 over USB (class-compliant device port) **or** BLE-MIDI via the vendor USB dongle on the piano's host port (PC side needs a Bluetooth LE adapter; USB and BLE cannot run simultaneously on the piano). **[E]** for the app path; **[U]** for exact Windows behavior.
+- Target OS includes Windows 10 x64: WinMM is the baseline stack; Windows MIDI Services exist on Windows 11 only and are therefore not a requirement. BLE-MIDI endpoints surface as ordinary WinMM ports through the in-box Windows 10 BLE-MIDI driver. **[E: OS docs]** / **[U: to verify on the target PC]**
 - All parameter traffic is System Exclusive (`F0 … F7`).
 - A framing layer writes messages through a byte-buffered sender. On closing a SysEx message (trailing `F7`) it inserts the payload length after the status byte using 7-bit groups, least significant group first, with the continuation bit (`0x80`) set on all but the final group: 1 byte if < 0x80, 2 if < 0x4000, 3 if < 0x200000, 4 if < 0x10000000. **[E]**
 - Channel voice messages pass through unmodified (2-byte forms for `0xC0–0xDF`). **[E]**
