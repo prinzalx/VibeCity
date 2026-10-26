@@ -209,6 +209,7 @@ impl Worker {
 
 struct Gui {
     ports: Vec<String>,
+    cat: usize,
     port_idx: usize,
     status: String,
     rows: Vec<Option<Row>>,
@@ -226,6 +227,7 @@ impl Gui {
         let ports = Worker::list_ports();
         Self {
             ports,
+            cat: 0,
             port_idx: 0,
             status: "Nicht verbunden.".into(),
             rows: vec![None; IDS.len()],
@@ -265,10 +267,39 @@ impl Gui {
     }
 }
 
+/// Kategorien wie im Remote-Controller-Menü der App (Zuordnung nach byte1-Cluster, vorläufig).
+const CATS: &[(&str, &[u8])] = &[
+    ("Tone", &[0x01, 0x60, 0x61, 0x62]),
+    ("Keyboard", &[0x07, 0x20, 0x05, 0x10]),
+    ("Pedal & others", &[0x02, 0x03, 0x06, 0x5A]),
+    ("Acoustic Simulator", &[0x0A, 0x0B, 0x00]),
+    ("Effect", &[0x50, 0x51, 0x52, 0x53, 0x55, 0x58]),
+    ("Built-in Songs", &[0x6C, 0x3A]),
+    ("MIDI Recorder", &[0x78]),
+    ("Metronome", &[0x25, 0x48]),
+];
+
 impl eframe::App for Gui {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.drain_events();
+        let accent = egui::Color32::from_rgb(247, 183, 51);
+
+        // Kopfzeile wie in der App: Titel links, Gerät rechts.
         egui::Panel::top("header").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.heading("Remote Controller");
+                ui.separator();
+                ui.strong("PX-S1100");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let ok = self.status.starts_with("Verbunden");
+                    let dot = if ok { "●" } else { "○" };
+                    ui.colored_label(if ok { egui::Color32::from_rgb(40, 160, 80) } else { egui::Color32::GRAY }, format!("{dot} {}", self.status));
+                });
+            });
+        });
+
+        // Werkzeugleiste: Port + Aktionen.
+        egui::Panel::top("toolbar").show(ui, |ui| {
             ui.horizontal(|ui| {
                 egui::ComboBox::new("port_cb", "Port")
                     .selected_text(self.ports.get(self.port_idx).cloned().unwrap_or_else(|| "—".into()))
@@ -280,7 +311,6 @@ impl eframe::App for Gui {
                 if ui.button("Neu laden").clicked() {
                     self.ports = Worker::list_ports();
                 }
-                ui.separator();
                 if ui.button("Verbinden").clicked() {
                     if let Some(p) = self.ports.get(self.port_idx).cloned() {
                         let _ = self.cmd_tx.send(Cmd::Connect(p));
@@ -293,18 +323,39 @@ impl eframe::App for Gui {
                         let _ = self.cmd_tx.send(Cmd::ReadAll);
                     }
                 });
-                ui.separator();
-                ui.label(&self.status);
             });
         });
+
+        // Kategorie-Kacheln wie im App-Screenshot (2×4 + „Alle").
+        egui::Panel::top("tiles").show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                let tile = |ui: &mut egui::Ui, sel: &mut usize, idx: usize, text: &str, accent: egui::Color32| {
+                    let active = *sel == idx;
+                    let frame = egui::Frame::new()
+                        .fill(if active { accent.linear_multiply(0.25) } else { egui::Color32::from_gray(250) })
+                        .stroke(egui::Stroke::new(if active { 2.0 } else { 1.0 }, accent))
+                        .corner_radius(8.0)
+                        .inner_margin(egui::Margin::symmetric(14, 8));
+                    if frame.show(ui, |ui| ui.selectable_label(active, text)).inner.clicked() {
+                        *sel = idx;
+                    }
+                };
+                tile(ui, &mut self.cat, 0, "Alle", accent);
+                for (i, (name, _)) in CATS.iter().enumerate() {
+                    tile(ui, &mut self.cat, i + 1, name, accent);
+                }
+            });
+        });
+
         egui::Panel::bottom("log").resizable(true).default_size(90.0).show(ui, |ui| {
-            ui.heading("Protokoll");
+            ui.strong("Protokoll");
             egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
                 for l in &self.log {
                     ui.label(l);
                 }
             });
         });
+
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 egui::Grid::new("params").num_columns(5).spacing([10.0, 4.0]).show(ui, |ui| {
@@ -314,6 +365,13 @@ impl eframe::App for Gui {
                     ui.label("");
                     ui.label("");
                     for (i, meta) in IDS.iter().enumerate() {
+                        // Filter: Kategorie 0 = alle.
+                        if self.cat > 0 {
+                            let (_, groups) = CATS[self.cat - 1];
+                            if !groups.contains(&meta[0]) {
+                                continue;
+                            }
+                        }
                         ui.label(fmt_id(*meta));
                         match &mut self.rows[i] {
                             Some(r) => {
