@@ -3,8 +3,8 @@
 
 use std::io::Write;
 use vibecity::protocol::{
-    build_param_msg, build_param_request, build_param_send, parse_param_msg, Reply,
-    SUB_CMD_COMMAND, SUB_CMD_DATA,
+    build_param_msg, build_param_request, build_param_send, parse_param_msg, sub_of, Reply,
+    SUB_APPX, SUB_CMD_COMMAND, SUB_CMD_DATA, SUB_SESSION_ENABLE,
 };
 use vibecity::transport::{MockTransport, Transport};
 use vibecity::PARAM_COUNT;
@@ -23,19 +23,31 @@ fn parse_id(s: &str) -> Result<usize, String> {
 }
 
 /// Request/response exchange for one parameter id against any transport.
-/// Reference-app read path (evidence, getParameterThread): 30-byte SEND frame
-/// with COMMAND id carrying the parameter id, then 25-byte REQUEST frame with
-/// DATA id; the value arrives on a DATA-id reply.
+/// Full reference-app read session (evidence: getParameterThread state flow):
+///   1) REQUEST(0xC4)   appx session start   [sub on wire: U]
+///   2) REQUEST(0xB8)   session enable       (link34: 0xB6)
+///   3) SEND(0xCF,id) + REQUEST(0xD0) pair; value arrives on a 0xD0 reply.
+/// Device replies are tolerated/ignored on the way; only the 0xD0 answer counts.
 fn get_param<T: Transport + ?Sized>(t: &mut T, id: usize) -> Result<u32, String> {
+    t.send(&build_param_request(SUB_APPX, 0))?;
+    let _ = t.recv(400);
+    t.send(&build_param_request(SUB_SESSION_ENABLE, 0))?;
+    let _ = t.recv(600);
     t.send(&build_param_send(SUB_CMD_COMMAND, id as u32, 0))?;
-    let _ = t.recv(900); // ack of the SEND frame ([U] content)
     t.send(&build_param_request(SUB_CMD_DATA, 0))?;
-    let frame = t.recv(900).ok_or("timeout waiting for reply")?;
-    let r: Reply = parse_param_msg(&frame).ok_or("malformed reply")?;
-    if !r.ok {
-        return Err(format!("device status {}", r.status));
+    // Device may answer 0xC4/0xB8 remnants first; accept only a 0xD0 value frame.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1800);
+    while std::time::Instant::now() < deadline {
+        let Some(frame) = t.recv(900) else { continue };
+        if sub_of(&frame) == Some(SUB_CMD_DATA) {
+            let r: Reply = parse_param_msg(&frame).ok_or("malformed 0xD0 reply")?;
+            if r.ok {
+                return Ok(r.payload);
+            }
+            return Err(format!("device status {}", r.status));
+        }
     }
-    Ok(r.payload)
+    Err("timeout waiting for 0xD0 reply".into())
 }
 
 fn set_param<T: Transport + ?Sized>(t: &mut T, id: usize, value: u32) -> Result<(), String> {
@@ -469,24 +481,45 @@ fn run_selftest(secs: u64) {
         }
     }
 
-    // Pair attempt per reference app read path.
-    log.push_str("\n6) PAIR wie Referenz-App: Send(30B,CF) + Request(25B,D0)\n");
-    let a = build_param_send(SUB_CMD_COMMAND, 0, 0);
-    let b = build_param_request(SUB_CMD_DATA, 0);
-    log.push_str(&format!("  send: {}\n  send: {}\n", hexdump(&a), hexdump(&b)));
-    let _ = t.send(&a);
-    let _ = t.send(&b);
-    let mut got = 0;
-    while let Some(frame) = t.recv(1500) {
-        log.push_str(&format!("  antwort: {}\n", hexdump(&frame)));
-        got += 1;
-        if got >= 4 {
-            break;
+    // Full reference read session, step by step, so the log shows exactly
+    // where the real device answers and where it stays quiet.
+    log.push_str("\n6) SESSION wie Referenz-App: C4 -> B8 -> (CF+D0)\n");
+    let step = |log: &mut String, t: &mut dyn Transport, label: &str, msgs: &[Vec<u8>], want: u16| {
+        for m in msgs {
+            log.push_str(&format!("  {label} send: {}\n", hexdump(m)));
+            let _ = t.send(m);
         }
-    }
-    if got == 0 {
-        log.push_str("  antwort: keine (Timeout 1.5 s)\n");
-    }
+        let mut got = 0;
+        let mut hit = false;
+        while let Some(frame) = t.recv(1200) {
+            let sub = sub_of(&frame).map(|s| format!("{s:02X}")).unwrap_or_else(|| "--".into());
+            log.push_str(&format!("  {label} antwort sub={sub}: {}\n", hexdump(&frame)));
+            hit |= sub_of(&frame) == Some(want);
+            got += 1;
+            if got >= 5 {
+                break;
+            }
+        }
+        if got == 0 {
+            log.push_str(&format!("  {label} antwort: keine (Timeout)\n"));
+        }
+        hit
+    };
+    let ok_c4 = step(&mut log, &mut *t, "C4", &[build_param_request(SUB_APPX, 0)], SUB_APPX);
+    let ok_b8 = step(&mut log, &mut *t, "B8", &[build_param_request(SUB_SESSION_ENABLE, 0)], SUB_SESSION_ENABLE);
+    let ok_d0 = step(
+        &mut log,
+        &mut *t,
+        "CF+D0",
+        &[build_param_send(SUB_CMD_COMMAND, 0, 0), build_param_request(SUB_CMD_DATA, 0)],
+        SUB_CMD_DATA,
+    );
+    log.push_str(&format!(
+        "  Zwischenergebnis: C4={}, B8={}, D0={}\n",
+        if ok_c4 { "OK" } else { "keine" },
+        if ok_b8 { "OK" } else { "keine" },
+        if ok_d0 { "OK" } else { "keine" }
+    ));
 
     log.push_str(&format!("\n== MONITOR {secs} s ==\n(Spielen/Regler ändern ist erlaubt, nichts senden)\n"));
     println!("Monitor läuft {secs} s — jetzt am Piano ein paar Töne spielen …");

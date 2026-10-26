@@ -30,6 +30,20 @@ pub const SUB_CMD_COMMAND: u16 = 0xCF; // evidence (non-3/4 link variant)
 pub const SUB_CMD_DATA_LINK34: u16 = 0xCE;
 pub const SUB_CMD_COMMAND_LINK34: u16 = 0xCD;
 
+/// Session-establishment sub-commands seen in getParameterThread (evidence):
+/// 0xC4 = appx ack sub, 0xB8 = system bulk session enable (0xB6 for link34).
+pub const SUB_APPX: u16 = 0xC4;
+pub const SUB_SESSION_ENABLE: u16 = 0xB8;
+
+/// Decode the 7-bit sub-command pair of any parameter-family frame.
+pub fn sub_of(frame: &[u8]) -> Option<u16> {
+    if frame.len() > OFF_SUB_CMD + 1 {
+        Some(dec7_2([frame[OFF_SUB_CMD], frame[OFF_SUB_CMD + 1]]))
+    } else {
+        None
+    }
+}
+
 /// Session-enable command ids by link type (evidence).
 pub fn session_enable_cmd(link_type: u8) -> u8 {
     if link_type == 3 || link_type == 4 {

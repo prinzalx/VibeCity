@@ -83,3 +83,14 @@ After each successful set/get the engine serializes the full value array as a **
 3. Exact header field split between offsets 0x05 and 0x11.
 4. Whether the legacy `0xC4/0xC5` short path needs a checksum.
 5. PX-S1100 model id and its persistence-file slot name.
+
+## Amendment 26.10. — read path uses two frame variants (evidence)
+
+Decompiled frame templates (`get_IndividualParameterSend` /
+`get_IndividualParameterRequest`) show the reference app reads a parameter as
+a **pair**: a 30-byte SEND frame (marker byte5=0x01, COMMAND sub-id at
+18/19, operand as 5x7-bit at 24..28, F7 at 29) immediately followed by a
+25-byte REQUEST frame (byte5=0x00, DATA sub-id at 18/19, F7 at 24). Both
+templates carry model-id byte 0x30 at offset 7 ([U] for the PX-S1100). A lone
+30-byte frame with byte5=0x00 (our first implementation) draws no reply from
+the real piano — matches the observed R1 timeout.
