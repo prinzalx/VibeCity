@@ -8,6 +8,29 @@ wording and structure are original.
 
 Status legend: **[E]** evidence (observed in the shipped binary), **[U]** unverified / to be confirmed at the device.
 
+## 0. WORKING CHANNEL (device-confirmed 26.10.2026) — overrides sections 2/3 for settings read/write
+
+The live read/write path for Remote Controller settings is a distinct status
+family, fully proven against a real PX-S1100 over the plain USB port (no
+session preamble, no handshake):
+
+| Direction | Frame | Evidence |
+|---|---|---|
+| READ request (11 B) | `F0 44 7E 7E 7F 0F 00 <IDhi> <IDlo> 00 F7` | 53/53 answered, per-ID (`logs/read-all-1793028718.log`) **[E:device]** |
+| STATUS answer (17/19 B) | `F0 44 7E 7E 7F 0F 01 <IDhi> <IDlo> 01 <typ> 01 00 <wert…> F7` | same capture **[E:device]** |
+| WRITE request (16 B) | `F0 44 7E 7E 7F 0F 01 <IDhi> <IDlo> 01 00 01 00 <vlo> <vhi> F7` | `set 07 01 42` wrote + re-read OK **[E:device]** |
+
+- byte 6 `00` = read request, `01` = status/write shape (writing with byte 6
+  `01` and value bytes only ACKs with the master status `7F 00`).
+- Answer `typ` byte (offset 10): `02` = value parameter, `00` = flag. Value is
+  7-bit little-endian starting at offset 13 (`value = b13 + (b14 << 7)`).
+- 53 table IDs are listed in `docs/param-ids.md`; two IDs seen in captures
+  (`25 14`, `48 00`) are not in the table and fall back to the master status
+  frame `7F 00` (current power/mode state, values observed: 00/03/05/06).
+- Sections 2–3 below describe the bulk/Appx family (`F0 44 19 03 …` after
+  model patching) used by the reference app's song/chord data path. The
+  settings path above works without it.
+
 ## 1. Transport
 
 - MIDI 1.0 over USB (class-compliant device port) **or** BLE-MIDI via the vendor USB dongle on the piano's host port (PC side needs a Bluetooth LE adapter; USB and BLE cannot run simultaneously on the piano). **[E]** for the app path; **[U]** for exact Windows behavior.

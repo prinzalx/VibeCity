@@ -733,6 +733,7 @@ fn run_read_all() {
     // Vorherige Wellen leerlaufen lassen.
     while t.recv(200).is_some() {}
     let mut total = 0usize;
+    let mut last_frames: Vec<Vec<u8>> = Vec::new();
     for id in READ_ALL_IDS {
         let frame: Vec<u8> = vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x00, id[0], id[1], 0x00, 0xF7];
         let _ = t.send(&frame);
@@ -741,6 +742,7 @@ fn run_read_all() {
         while let Some(f) = t.recv(50) {
             got += 1;
             total += 1;
+            last_frames.push(f.clone());
             let line = format!("REQ {:02X} {:02X} -> {}", id[0], id[1], hexdump(&f));
             println!("{line}");
             log.push_str(&line);
@@ -761,6 +763,30 @@ fn run_read_all() {
         println!("{line}");
         log.push_str(&line);
         log.push('\n');
+        last_frames.push(f);
+    }
+    // JSON-Snapshot: logs/read-all-<ts>.json — Grundlage für GUI und Vergleiche.
+    {
+        let mut js = String::from("{\n  \"ts\": ");
+        js.push_str(&ts.to_string());
+        js.push_str(&format!(",\n  \"port\": \"{name}\",\n  \"rows\": [\n"));
+        for (i, f) in last_frames.iter().enumerate() {
+            if f.len() >= 15 {
+                let id = format!("{:02X} {:02X}", f[7], f[8]);
+                let typ = if f[10] == 0x02 { "wert" } else { "flag" };
+                let raw: Vec<String> = f[13..f.len() - 1].iter().map(|b| format!("{b:02X}")).collect();
+                let value = f[13] as u16 + ((if f.len() > 14 { f[14] } else { 0 }) as u16) * 128;
+                js.push_str(&format!("    {{\"id\": \"{id}\", \"typ\": \"{typ}\", \"raw\": \"{}\", \"value\": {value}}}", raw.join(" ")));
+            } else {
+                js.push_str(&format!("    {{\"raw_frame\": \"{}\"}}", hexdump(f)));
+            }
+            if i + 1 < last_frames.len() { js.push(','); }
+            js.push('\n');
+        }
+        js.push_str("  ]\n}\n");
+        let jpath = logpath.replace(".log", ".json");
+        let _ = std::fs::write(&jpath, &js);
+        println!("JSON: {jpath}");
     }
     let done = format!("Read-All fertig: {total} Antwort(en). Log: {logpath}");
     println!("{done}");
