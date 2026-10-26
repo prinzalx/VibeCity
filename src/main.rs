@@ -677,6 +677,25 @@ fn run_sweep() {
     pair.extend_from_slice(&d0.clone());
 
     let candidates: Vec<(&str, SweepMsg)> = vec![
+        // NEU 26.10. Klavier-Mitschnitt: Piano sendet Status über Familie
+        // F0 44 7E 7E 7F 0F 01 <IDhi IDlo> … (57 IDs = PARAM_COUNT).
+        // Requests probieren wir im Piano-eigenen Kanal (byte6 variiert 01/02/03).
+        (
+            "KANAL 7E7E Read 01 52 00",
+            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, 0x52, 0x00, 0xF7]],
+        ),
+        (
+            "KANAL 7E7E Read 02 52 00",
+            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x02, 0x52, 0x00, 0xF7]],
+        ),
+        (
+            "KANAL 7E7E Read 03 52 00",
+            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x03, 0x52, 0x00, 0xF7]],
+        ),
+        (
+            "KANAL 7E7E Read 02 00 00",
+            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x02, 0x00, 0x00, 0xF7]],
+        ),
         (
             "SESSION-PREP NEU (Start+B8+CF+D0)",
             burst(&[bulk_start, &b8, &cf, &d0]),
