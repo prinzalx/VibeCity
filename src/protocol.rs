@@ -59,6 +59,46 @@ pub fn build_param_msg(sub_cmd: u16, payload: u32, model_id: u16, link_type: u8)
     m
 }
 
+/// "Send"-Variante (30 Byte): Marker byte5=0x01, Sub-Kommando bei 18/19,
+/// Operand als 5x7-Bit bei 24..28, F7 bei 29.
+/// Evidence: dekorierter Frame-Code von get_IndividualParameterSend
+/// (Template-Immediate 0x300017f041744f0).
+pub fn build_param_send(sub_cmd: u16, operand: u32, link_type: u8) -> Vec<u8> {
+    let mut m = vec![0u8; PARAM_MSG_LEN];
+    m[..5].copy_from_slice(&HEADER);
+    if link_type == 3 || link_type == 4 {
+        m[OFF_LINK_BYTE] = 0x02;
+    }
+    m[5] = 0x01; // send-marker (evidence)
+    m[7] = 0x30; // model-id slot of the template ([U] for PX-S1100)
+    let cmd = enc7_2(sub_cmd);
+    m[OFF_SUB_CMD] = cmd[0];
+    m[OFF_SUB_CMD + 1] = cmd[1];
+    let pl = enc7_5(operand);
+    m[OFF_PAYLOAD..OFF_PAYLOAD + 5].copy_from_slice(&pl);
+    m[PARAM_MSG_LEN - 1] = 0xF7;
+    m
+}
+
+/// "Request"-Variante (25 Byte): byte5=0x00, Sub-Kommando bei 18/19,
+/// kein Operand, F7 bei 24.
+/// Evidence: dekorierter Frame-Code von get_IndividualParameterRequest
+/// (Template-Immediate 0x300007f041744f0).
+pub fn build_param_request(sub_cmd: u16, link_type: u8) -> Vec<u8> {
+    let mut m = vec![0u8; 25];
+    m[..5].copy_from_slice(&HEADER);
+    if link_type == 3 || link_type == 4 {
+        m[OFF_LINK_BYTE] = 0x02;
+    }
+    m[5] = 0x00; // request-marker (evidence)
+    m[7] = 0x30; // model-id slot of the template ([U] for PX-S1100)
+    let cmd = enc7_2(sub_cmd);
+    m[OFF_SUB_CMD] = cmd[0];
+    m[OFF_SUB_CMD + 1] = cmd[1];
+    m[24] = 0xF7;
+    m
+}
+
 /// A parsed reply to a parameter message.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Reply {
@@ -109,6 +149,25 @@ pub fn build_bulk_msg(payload: &[u8], selector: u16, _model_id: u16, link_type: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn param_send_request_frames() {
+        // Templates from decompiled get_IndividualParameterSend/Request.
+        let s = build_param_send(SUB_CMD_COMMAND, 0, 0);
+        assert_eq!(s.len(), 30);
+        assert_eq!(&s[..5], &HEADER[..]);
+        assert_eq!(s[5], 0x01, "send marker");
+        assert_eq!(s[7], 0x30, "model-id slot of template");
+        assert_eq!([s[0x12], s[0x13]], enc7_2(SUB_CMD_COMMAND));
+        assert_eq!(s[29], 0xF7);
+        let r = build_param_request(SUB_CMD_DATA, 0);
+        assert_eq!(r.len(), 25);
+        assert_eq!(r[5], 0x00, "request marker");
+        assert_eq!([r[0x12], r[0x13]], enc7_2(SUB_CMD_DATA));
+        assert_eq!(r[24], 0xF7);
+        // link34 variant flips the link byte in both builders
+        assert_eq!(build_param_request(SUB_CMD_DATA, 3)[3], 0x02);
+    }
 
     #[test]
     fn param_msg_layout() {

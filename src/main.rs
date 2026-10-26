@@ -2,7 +2,10 @@
 //! back to the built-in mock device. All device I/O is logged to logs/.
 
 use std::io::Write;
-use vibecity::protocol::{build_param_msg, parse_param_msg, Reply, SUB_CMD_COMMAND, SUB_CMD_DATA};
+use vibecity::protocol::{
+    build_param_msg, build_param_request, build_param_send, parse_param_msg, Reply,
+    SUB_CMD_COMMAND, SUB_CMD_DATA,
+};
 use vibecity::transport::{MockTransport, Transport};
 use vibecity::PARAM_COUNT;
 
@@ -20,9 +23,13 @@ fn parse_id(s: &str) -> Result<usize, String> {
 }
 
 /// Request/response exchange for one parameter id against any transport.
+/// Reference-app read path (evidence, getParameterThread): 30-byte SEND frame
+/// with COMMAND id carrying the parameter id, then 25-byte REQUEST frame with
+/// DATA id; the value arrives on a DATA-id reply.
 fn get_param<T: Transport + ?Sized>(t: &mut T, id: usize) -> Result<u32, String> {
-    // Observed read path: COMMAND sub-cmd with the id, then expect reply.
-    t.send(&build_param_msg(SUB_CMD_COMMAND, id as u32, 0, 2))?;
+    t.send(&build_param_send(SUB_CMD_COMMAND, id as u32, 0))?;
+    let _ = t.recv(900); // ack of the SEND frame ([U] content)
+    t.send(&build_param_request(SUB_CMD_DATA, 0))?;
     let frame = t.recv(900).ok_or("timeout waiting for reply")?;
     let r: Reply = parse_param_msg(&frame).ok_or("malformed reply")?;
     if !r.ok {
@@ -121,6 +128,8 @@ fn run_probe() {
             m
         }),
         ("4) MUI5-Altanfrage  F0 43 19 C4 F7", vec![0xF0, 0x43, 0x19, 0xC4, 0xF7]),
+        ("5) NEU Send-Frame 30B (byte5=01, sub=CF, id0)", build_param_send(SUB_CMD_COMMAND, 0, 0)),
+        ("6) NEU Request-Frame 25B (sub=D0)", build_param_request(SUB_CMD_DATA, 0)),
     ];
     for (label, msg) in queries {
         println!("{label}");
@@ -142,6 +151,25 @@ fn run_probe() {
             println!("   antwort: keine (Timeout 1.2 s)");
         }
         println!();
+    }
+    // Pair attempt per reference app: SEND frame immediately followed by REQUEST.
+    println!("7) PAIR wie Referenz-App: Send(30B,CF) direkt + Request(25B,D0)");
+    let a = build_param_send(SUB_CMD_COMMAND, 0, 0);
+    let b = build_param_request(SUB_CMD_DATA, 0);
+    println!("   send: {}", hexdump(&a));
+    println!("   send: {}", hexdump(&b));
+    let _ = t.send(&a);
+    let _ = t.send(&b);
+    let mut got = 0;
+    while let Some(frame) = t.recv(1500) {
+        println!("   antwort: {}", hexdump(&frame));
+        got += 1;
+        if got >= 4 {
+            break;
+        }
+    }
+    if got == 0 {
+        println!("   antwort: keine (Timeout 1.5 s)");
     }
     println!("Probe fertig — Ausgabe zurück an Hermes.");
 }
@@ -417,13 +445,10 @@ fn run_selftest(secs: u64) {
 
     let queries: Vec<(&str, Vec<u8>)> = vec![
         ("1) General-MIDI-Inquiry", vec![0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]),
-        ("2) Casio privat param-get id0", build_param_msg(SUB_CMD_COMMAND, 0, 0, 2)),
-        ("3) Casio privat param-get id0, Geräte-ID 0", {
-            let mut m = build_param_msg(SUB_CMD_COMMAND, 0, 0, 2);
-            m[4] = 0x00;
-            m
-        }),
-        ("4) MUI5-Altanfrage", vec![0xF0, 0x43, 0x19, 0xC4, 0xF7]),
+        ("2) Casio privat 30B (alt)", build_param_msg(SUB_CMD_COMMAND, 0, 0, 2)),
+        ("3) MUI5-Altanfrage", vec![0xF0, 0x43, 0x19, 0xC4, 0xF7]),
+        ("4) NEU Send-Frame 30B (byte5=01, sub=CF, id0)", build_param_send(SUB_CMD_COMMAND, 0, 0)),
+        ("5) NEU Request-Frame 25B (sub=D0)", build_param_request(SUB_CMD_DATA, 0)),
     ];
     for (label, msg) in queries {
         log.push_str(&format!("{label}\n  send: {}\n", hexdump(&msg)));
@@ -442,6 +467,25 @@ fn run_selftest(secs: u64) {
         if n == 0 {
             log.push_str("  antwort: keine (Timeout 1.2 s)\n");
         }
+    }
+
+    // Pair attempt per reference app read path.
+    log.push_str("\n6) PAIR wie Referenz-App: Send(30B,CF) + Request(25B,D0)\n");
+    let a = build_param_send(SUB_CMD_COMMAND, 0, 0);
+    let b = build_param_request(SUB_CMD_DATA, 0);
+    log.push_str(&format!("  send: {}\n  send: {}\n", hexdump(&a), hexdump(&b)));
+    let _ = t.send(&a);
+    let _ = t.send(&b);
+    let mut got = 0;
+    while let Some(frame) = t.recv(1500) {
+        log.push_str(&format!("  antwort: {}\n", hexdump(&frame)));
+        got += 1;
+        if got >= 4 {
+            break;
+        }
+    }
+    if got == 0 {
+        log.push_str("  antwort: keine (Timeout 1.5 s)\n");
     }
 
     log.push_str(&format!("\n== MONITOR {secs} s ==\n(Spielen/Regler ändern ist erlaubt, nichts senden)\n"));
