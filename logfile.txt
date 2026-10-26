@@ -1,54 +1,115 @@
-C:\BLOB\output\010\06_vibecity>C:\BLOB\output\010\06_vibecity\tgt-win\x86_64-pc-windows-gnu\release\vibecity.exe wizard
-=== VibeCity Wizard ===
-Dieser Wizard prüft Schritt für Schritt, ob der PC mit dem
-Casio-Piano sprechen kann. Am Ende steht alles in der Datei
-hardware-tests-results.md — die bitte zurück an Hermes.
+C:\BLOB\output\010\06_vibecity>C:\BLOB\output\010\06_vibecity\tgt-win\x86_64-pc-windows-gnu\release\vibecity.exe probe
+Probe über Port 'CASIO USB-MIDI' — Piano bitte eingeschaltet lassen.
 
---- Vorbereitung ---
-Womit ist das Piano verbunden?
-  [1] USB-Kabel   (empfohlen für den ersten Test)
-  [2] WU-BT10 Bluetooth-Dongle
-  Auswahl (1/2, Enter = 1): 1
-  So geht USB:
-  - USB-Kabel von Piano (USB TO HOST) in den PC — Datenkabel, kein reines Ladekabel.
-  - Piano EINSCHALTEN.
-Ist das Piano jetzt eingeschaltet und verbunden? [j/n/s]: j
+1) General-MIDI-Inquiry  F0 7E 7F 06 01 F7
+   send: F0 7E 7F 06 01 F7
+   antwort: keine (Timeout 1.2 s)
 
-Gefundene MIDI-Ports:
-  [0] Microsoft GS Wavetable Synth (Unknown)  ← Windows-eigene Soundbank, NICHT das Piano
-Nummer wählen · r = Neu scannen · Enter = Abbruch: 0
-  Hinweis: 'Microsoft GS Wavetable Synth' klingt nicht nach Piano (eher Windows-Soundbank).
-  Ein Test damit führt gleich wahrscheinlich zu 'timeout'.
-Trotzdem damit testen? [j/n/s]: j
+2) Casio privat param-get id0 (30 Byte)
+   send: F0 44 17 04 7F 00 00 00 00 00 00 00 00 00 00 00 00 00 4F 01 00 00 00 00 00 00 00 00 00 F7
+   antwort: keine (Timeout 1.2 s)
 
---- Schritt 1/4 · R0 · Verbindung ---
-Ziel: Der PC findet das Piano als MIDI-Port und kann es öffnen.
-Ergebnis: Port 'Microsoft GS Wavetable Synth' wurde gefunden und geöffnet.
-Rückweg: App schließen — am Piano ändert sich dabei nichts.
-Ist das der richtige Piano-Port? [j/n/s]: s
+3) Casio privat param-get id0, Geräte-ID 0 statt 7F
+   send: F0 44 17 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 4F 01 00 00 00 00 00 00 00 00 00 F7
+   antwort: keine (Timeout 1.2 s)
 
---- Schritt 2/4 · R1 · Lesen ---
-Ziel: Das Piano beantwortet unsere erste Frage (Parameter 0).
-Frage: 'Zeig mir Wert 0' · Antwort kommt als SysEx-Nachricht zurück.
-Fehler: timeout waiting for reply
-Antwort erhalten und plausibel? [j/n/s]: n
-  Typische Ursachen bei 'timeout':
-  - Port war die Windows-Soundbank (antwortet nie auf Casio-Fragen)
-  - Piano war im Moment der Frage aus
-  - Bei Bluetooth: Signal weg (Dongle/Piano aus).
+4) MUI5-Altanfrage  F0 43 19 C4 F7
+   send: F0 43 19 C4 F7
+   antwort: keine (Timeout 1.2 s)
 
---- Schritt 3/4 · R2 · Snapshot ---
-Ziel: Alle 57 Parameter abfragen und als Datei sichern (Startpunkt für später).
-Ergebnis: snapshot-1793003079.json geschrieben (leere Werte: mind. 1 — jedes null heißt: keine Antwort)
-Snapshot ok? [j/n/s]: n
+Probe fertig — Ausgabe zurück an Hermes.
 
---- Schritt 4/4 · W1 · Schreiben ---
-Ziel: Dem Piano einen neuen Wert mitteilen und prüfen, dass er ankam.
-Beispiel: '3=7' bedeutet: Parameter 3 auf Wert 7 setzen.
-Rückweg: alten Wert notieren und mit 'vibecity set 3 <alt>' zurücksetzen.
-  id=value eingeben (Enter = überspringen):
+C:\BLOB\output\010\06_vibecity>C:\BLOB\output\010\06_vibecity\tgt-win\x86_64-pc-windows-gnu\release\vibecity.exe monitor 20
+Monitor auf 'CASIO USB-MIDI' — 20 s lang, nichts senden. Jetzt am Piano etwas ändern …
+[  3137 ms] Kurz: B0 58 5A
+[  3137 ms] Kurz: 90 1E 54
+[  3297 ms] Kurz: 80 1E 40
+[  4567 ms] Kurz: B0 58 6E
+[  4567 ms] Kurz: 90 20 06
+[  4873 ms] Kurz: 80 20 40
+[  5420 ms] Kurz: B0 58 7D
+[  5421 ms] Kurz: 90 20 4C
+[  5715 ms] Kurz: 80 20 40
+[ 14408 ms] Kurz: B0 58 07
+[ 14408 ms] Kurz: 90 16 3B
+[ 14458 ms] Kurz: 80 16 40
+[ 14591 ms] Kurz: B0 58 01
+[ 14591 ms] Kurz: 90 16 49
+[ 14650 ms] Kurz: 80 16 40
+[ 14747 ms] Kurz: B0 58 5A
+[ 14748 ms] Kurz: 90 16 38
+[ 14824 ms] Kurz: 80 16 40
+[ 14899 ms] Kurz: B0 58 0E
+[ 14899 ms] Kurz: 90 16 42
+[ 14975 ms] Kurz: 80 16 40
+[ 15054 ms] Kurz: B0 58 22
+[ 15054 ms] Kurz: 90 16 45
+[ 15140 ms] Kurz: 80 16 40
+[ 15206 ms] Kurz: B0 58 40
+[ 15206 ms] Kurz: 90 16 42
+[ 15284 ms] Kurz: 80 16 40
+[ 15361 ms] Kurz: B0 58 72
+[ 15361 ms] Kurz: 90 16 42
+[ 15450 ms] Kurz: 80 16 40
+[ 15507 ms] Kurz: B0 58 38
+[ 15507 ms] Kurz: 90 16 49
+[ 15587 ms] Kurz: 80 16 40
+[ 15650 ms] Kurz: B0 58 38
+[ 15650 ms] Kurz: 90 16 49
+[ 15743 ms] Kurz: 80 16 40
+[ 15803 ms] Kurz: B0 58 11
+[ 15804 ms] Kurz: 90 16 55
+[ 15892 ms] Kurz: 80 16 40
+[ 15953 ms] Kurz: B0 58 19
+[ 15953 ms] Kurz: 90 16 51
+[ 16043 ms] Kurz: 80 16 40
+[ 16104 ms] Kurz: B0 58 08
+[ 16104 ms] Kurz: 90 16 52
+[ 16199 ms] Kurz: 80 16 40
+[ 16254 ms] Kurz: B0 58 30
+[ 16254 ms] Kurz: 90 16 57
+[ 16342 ms] Kurz: 80 16 40
+[ 16391 ms] Kurz: B0 58 2A
+[ 16391 ms] Kurz: 90 16 5E
+[ 16484 ms] Kurz: 80 16 40
+[ 16533 ms] Kurz: B0 58 72
+[ 16533 ms] Kurz: 90 16 67
+[ 16628 ms] Kurz: 80 16 40
+[ 16674 ms] Kurz: B0 58 4F
+[ 16675 ms] Kurz: 90 16 65
+[ 16773 ms] Kurz: 80 16 40
+[ 16810 ms] Kurz: B0 58 71
+[ 16810 ms] Kurz: 90 16 5E
+[ 16900 ms] Kurz: 80 16 40
+[ 16930 ms] Kurz: B0 58 2B
+[ 16930 ms] Kurz: 90 16 50
+[ 17225 ms] Kurz: 80 16 40
+[ 17261 ms] Kurz: B0 58 4A
+[ 17261 ms] Kurz: 90 16 48
+[ 17369 ms] Kurz: B0 58 5F
+[ 17370 ms] Kurz: 90 16 34
+[ 17474 ms] Kurz: 80 16 40
+[ 17474 ms] Kurz: 80 16 40
+[ 17532 ms] Kurz: B0 58 30
+[ 17532 ms] Kurz: 90 16 57
+[ 17652 ms] Kurz: 80 16 40
+[ 17716 ms] Kurz: B0 58 12
+[ 17716 ms] Kurz: 90 16 5C
+[ 17830 ms] Kurz: 80 16 40
+[ 17893 ms] Kurz: B0 58 71
+[ 17893 ms] Kurz: 90 16 5E
+[ 18001 ms] Kurz: 80 16 40
+[ 18080 ms] Kurz: B0 58 3B
+[ 18081 ms] Kurz: 90 16 56
+[ 18180 ms] Kurz: 80 16 40
+[ 18246 ms] Kurz: B0 58 3B
+[ 18246 ms] Kurz: 90 16 59
+[ 18347 ms] Kurz: 80 16 40
+[ 19027 ms] Kurz: B0 58 39
+[ 19027 ms] Kurz: 90 16 3B
+[ 19175 ms] Kurz: 80 16 40
+Monitor fertig: 87 Nachricht(en) gesehen.
 
-Ergebnisse gespeichert: hardware-tests-results.md — diese Datei zurück an Hermes.
-Wizard fertig. (Entwicklungs-Werkzeug, darf später weg.)
+C:\BLOB\output\010\06_vibecity>
 
 C:\BLOB\output\010\06_vibecity>

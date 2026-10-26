@@ -400,6 +400,69 @@ fn run_wizard() {
     ));
 }
 
+/// One-shot diagnosis for the user: probe + monitor, everything also
+/// written to logs\diagnose-<ts>.log so only ONE file has to be sent back.
+fn run_selftest(secs: u64) {
+    let Some((mut t, name)) = open_piano_port() else {
+        eprintln!("Kein MIDI-Port gefunden.");
+        return;
+    };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = std::fs::create_dir_all("logs");
+    let logpath = format!("logs\\diagnose-{ts}.log");
+    let mut log = format!("VibeCity Selftest · Port '{name}' · Zeitstempel {ts}\n\n== PROBE ==\n");
+
+    let queries: Vec<(&str, Vec<u8>)> = vec![
+        ("1) General-MIDI-Inquiry", vec![0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]),
+        ("2) Casio privat param-get id0", build_param_msg(SUB_CMD_COMMAND, 0, 0, 2)),
+        ("3) Casio privat param-get id0, Geräte-ID 0", {
+            let mut m = build_param_msg(SUB_CMD_COMMAND, 0, 0, 2);
+            m[4] = 0x00;
+            m
+        }),
+        ("4) MUI5-Altanfrage", vec![0xF0, 0x43, 0x19, 0xC4, 0xF7]),
+    ];
+    for (label, msg) in queries {
+        log.push_str(&format!("{label}\n  send: {}\n", hexdump(&msg)));
+        if let Err(e) = t.send(&msg) {
+            log.push_str(&format!("  Sendefehler: {e}\n"));
+            continue;
+        }
+        let mut n = 0;
+        while let Some(frame) = t.recv(1200) {
+            log.push_str(&format!("  antwort: {}\n", hexdump(&frame)));
+            n += 1;
+            if n >= 4 {
+                break;
+            }
+        }
+        if n == 0 {
+            log.push_str("  antwort: keine (Timeout 1.2 s)\n");
+        }
+    }
+
+    log.push_str(&format!("\n== MONITOR {secs} s ==\n(Spielen/Regler ändern ist erlaubt, nichts senden)\n"));
+    println!("Monitor läuft {secs} s — jetzt am Piano ein paar Töne spielen …");
+    let start = std::time::Instant::now();
+    let mut count = 0usize;
+    while start.elapsed().as_secs() < secs {
+        if let Some(frame) = t.recv(500) {
+            count += 1;
+            log.push_str(&format!("[{:>6} ms] {}\n", start.elapsed().as_millis(), hexdump(&frame)));
+        }
+    }
+    log.push_str(&format!("\nMonitor: {count} Nachricht(en) gesehen.\n\nEnde Selftest.\n"));
+
+    print!("{log}");
+    match std::fs::write(&logpath, &log) {
+        Ok(()) => println!("\nGespeichert: {logpath} — genau diese Datei zurück an Hermes."),
+        Err(e) => println!("\nLog schreiben fehlgeschlagen: {e}"),
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = args.first().map(String::as_str).unwrap_or("help");
@@ -479,6 +542,10 @@ fn main() {
             run_monitor(secs);
         }
         "probe" => run_probe(),
+        "selftest" => {
+            let secs = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(15);
+            run_selftest(secs);
+        }
         "panic" => println!("panic sent: All Sound Off / All Notes Off (CC120/CC123)"),
         "wizard" => run_wizard(),
         _ => println!(
