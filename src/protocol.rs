@@ -35,6 +35,11 @@ pub const SUB_CMD_COMMAND_LINK34: u16 = 0xCD;
 pub const SUB_APPX: u16 = 0xC4;
 pub const SUB_SESSION_ENABLE: u16 = 0xB8;
 
+/// Model id announced by the PX-S1100 in its GM-inquiry answer
+/// (`F0 44 7E 7E 7F 0F 01 08 …` → 7-bit pair 01 08 = 0x88) — evidence that
+/// the device reports this id; whether its RX filters on it is unverified [U].
+pub const MODEL_ID_PX_S1100: u16 = 0x88;
+
 /// Decode the 7-bit sub-command pair of any parameter-family frame.
 pub fn sub_of(frame: &[u8]) -> Option<u16> {
     if frame.len() > OFF_SUB_CMD + 1 {
@@ -77,14 +82,16 @@ pub fn build_param_msg(sub_cmd: u16, payload: u32, model_id: u16, link_type: u8)
 /// Operand als 5x7-Bit bei 24..28, F7 bei 29.
 /// Evidence: dekorierter Frame-Code von get_IndividualParameterSend
 /// (Template-Immediate 0x300017f041744f0).
-pub fn build_param_send(sub_cmd: u16, operand: u32, link_type: u8) -> Vec<u8> {
+pub fn build_param_send(sub_cmd: u16, operand: u32, link_type: u8, model_id: u16) -> Vec<u8> {
     let mut m = vec![0u8; PARAM_MSG_LEN];
     m[..5].copy_from_slice(&HEADER);
     if link_type == 3 || link_type == 4 {
         m[OFF_LINK_BYTE] = 0x02;
     }
     m[5] = 0x01; // send-marker (evidence)
-    m[7] = 0x30; // model-id slot of the template ([U] for PX-S1100)
+    let mid = enc7_2(model_id);
+    m[6] = mid[0]; // model-id slot, 7-bit pair (template default 0x30 [U])
+    m[7] = mid[1];
     let cmd = enc7_2(sub_cmd);
     m[OFF_SUB_CMD] = cmd[0];
     m[OFF_SUB_CMD + 1] = cmd[1];
@@ -98,14 +105,16 @@ pub fn build_param_send(sub_cmd: u16, operand: u32, link_type: u8) -> Vec<u8> {
 /// kein Operand, F7 bei 24.
 /// Evidence: dekorierter Frame-Code von get_IndividualParameterRequest
 /// (Template-Immediate 0x300007f041744f0).
-pub fn build_param_request(sub_cmd: u16, link_type: u8) -> Vec<u8> {
+pub fn build_param_request(sub_cmd: u16, link_type: u8, model_id: u16) -> Vec<u8> {
     let mut m = vec![0u8; 25];
     m[..5].copy_from_slice(&HEADER);
     if link_type == 3 || link_type == 4 {
         m[OFF_LINK_BYTE] = 0x02;
     }
     m[5] = 0x00; // request-marker (evidence)
-    m[7] = 0x30; // model-id slot of the template ([U] for PX-S1100)
+    let mid = enc7_2(model_id);
+    m[6] = mid[0]; // model-id slot, 7-bit pair (template default 0x30 [U])
+    m[7] = mid[1];
     let cmd = enc7_2(sub_cmd);
     m[OFF_SUB_CMD] = cmd[0];
     m[OFF_SUB_CMD + 1] = cmd[1];
@@ -167,20 +176,20 @@ mod tests {
     #[test]
     fn param_send_request_frames() {
         // Templates from decompiled get_IndividualParameterSend/Request.
-        let s = build_param_send(SUB_CMD_COMMAND, 0, 0);
+        let s = build_param_send(SUB_CMD_COMMAND, 0, 0, MODEL_ID_PX_S1100);
         assert_eq!(s.len(), 30);
         assert_eq!(&s[..5], &HEADER[..]);
         assert_eq!(s[5], 0x01, "send marker");
-        assert_eq!(s[7], 0x30, "model-id slot of template");
+        assert_eq!([s[6], s[7]], enc7_2(MODEL_ID_PX_S1100), "model-id slot");
         assert_eq!([s[0x12], s[0x13]], enc7_2(SUB_CMD_COMMAND));
         assert_eq!(s[29], 0xF7);
-        let r = build_param_request(SUB_CMD_DATA, 0);
+        let r = build_param_request(SUB_CMD_DATA, 0, MODEL_ID_PX_S1100);
         assert_eq!(r.len(), 25);
         assert_eq!(r[5], 0x00, "request marker");
         assert_eq!([r[0x12], r[0x13]], enc7_2(SUB_CMD_DATA));
         assert_eq!(r[24], 0xF7);
         // link34 variant flips the link byte in both builders
-        assert_eq!(build_param_request(SUB_CMD_DATA, 3)[3], 0x02);
+        assert_eq!(build_param_request(SUB_CMD_DATA, 3, MODEL_ID_PX_S1100)[3], 0x02);
     }
 
     #[test]

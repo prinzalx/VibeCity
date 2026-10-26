@@ -4,7 +4,7 @@
 use std::io::Write;
 use vibecity::protocol::{
     build_param_msg, build_param_request, build_param_send, parse_param_msg, sub_of, Reply,
-    SUB_APPX, SUB_CMD_COMMAND, SUB_CMD_DATA, SUB_SESSION_ENABLE,
+    MODEL_ID_PX_S1100, SUB_APPX, SUB_CMD_COMMAND, SUB_CMD_DATA, SUB_SESSION_ENABLE,
 };
 use vibecity::transport::{MockTransport, Transport};
 use vibecity::PARAM_COUNT;
@@ -29,12 +29,12 @@ fn parse_id(s: &str) -> Result<usize, String> {
 ///   3) SEND(0xCF,id) + REQUEST(0xD0) pair; value arrives on a 0xD0 reply.
 /// Device replies are tolerated/ignored on the way; only the 0xD0 answer counts.
 fn get_param<T: Transport + ?Sized>(t: &mut T, id: usize) -> Result<u32, String> {
-    t.send(&build_param_request(SUB_APPX, 0))?;
+    t.send(&build_param_request(SUB_APPX, 0, MODEL_ID_PX_S1100))?;
     let _ = t.recv(400);
-    t.send(&build_param_request(SUB_SESSION_ENABLE, 0))?;
+    t.send(&build_param_request(SUB_SESSION_ENABLE, 0, MODEL_ID_PX_S1100))?;
     let _ = t.recv(600);
-    t.send(&build_param_send(SUB_CMD_COMMAND, id as u32, 0))?;
-    t.send(&build_param_request(SUB_CMD_DATA, 0))?;
+    t.send(&build_param_send(SUB_CMD_COMMAND, id as u32, 0, MODEL_ID_PX_S1100))?;
+    t.send(&build_param_request(SUB_CMD_DATA, 0, MODEL_ID_PX_S1100))?;
     // Device may answer 0xC4/0xB8 remnants first; accept only a 0xD0 value frame.
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1800);
     while std::time::Instant::now() < deadline {
@@ -140,8 +140,8 @@ fn run_probe() {
             m
         }),
         ("4) MUI5-Altanfrage  F0 43 19 C4 F7", vec![0xF0, 0x43, 0x19, 0xC4, 0xF7]),
-        ("5) NEU Send-Frame 30B (byte5=01, sub=CF, id0)", build_param_send(SUB_CMD_COMMAND, 0, 0)),
-        ("6) NEU Request-Frame 25B (sub=D0)", build_param_request(SUB_CMD_DATA, 0)),
+        ("5) NEU Send-Frame 30B (byte5=01, sub=CF, id0)", build_param_send(SUB_CMD_COMMAND, 0, 0, MODEL_ID_PX_S1100)),
+        ("6) NEU Request-Frame 25B (sub=D0)", build_param_request(SUB_CMD_DATA, 0, MODEL_ID_PX_S1100)),
     ];
     for (label, msg) in queries {
         println!("{label}");
@@ -166,8 +166,8 @@ fn run_probe() {
     }
     // Pair attempt per reference app: SEND frame immediately followed by REQUEST.
     println!("7) PAIR wie Referenz-App: Send(30B,CF) direkt + Request(25B,D0)");
-    let a = build_param_send(SUB_CMD_COMMAND, 0, 0);
-    let b = build_param_request(SUB_CMD_DATA, 0);
+    let a = build_param_send(SUB_CMD_COMMAND, 0, 0, MODEL_ID_PX_S1100);
+    let b = build_param_request(SUB_CMD_DATA, 0, MODEL_ID_PX_S1100);
     println!("   send: {}", hexdump(&a));
     println!("   send: {}", hexdump(&b));
     let _ = t.send(&a);
@@ -481,8 +481,9 @@ fn run_selftest(secs: u64) {
         ("1) General-MIDI-Inquiry", vec![0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]),
         ("2) Casio privat 30B (alt)", build_param_msg(SUB_CMD_COMMAND, 0, 0, 2)),
         ("3) MUI5-Altanfrage", vec![0xF0, 0x43, 0x19, 0xC4, 0xF7]),
-        ("4) NEU Send-Frame 30B (byte5=01, sub=CF, id0)", build_param_send(SUB_CMD_COMMAND, 0, 0)),
-        ("5) NEU Request-Frame 25B (sub=D0)", build_param_request(SUB_CMD_DATA, 0)),
+        ("4) NEU Send-Frame 30B (byte5=01, sub=CF, id0)", build_param_send(SUB_CMD_COMMAND, 0, 0, MODEL_ID_PX_S1100)),
+        ("4b) derselbe Frame mit Modell 0x30 (Template-Default)", build_param_send(SUB_CMD_COMMAND, 0, 0, 0x30)),
+        ("5) NEU Request-Frame 25B (sub=D0)", build_param_request(SUB_CMD_DATA, 0, MODEL_ID_PX_S1100)),
     ];
     for (label, msg) in queries {
         println!("Frage: {label}");
@@ -534,13 +535,13 @@ fn run_selftest(secs: u64) {
         }
         hit
     };
-    let ok_c4 = step(&mut log, &mut *t, "C4", &[build_param_request(SUB_APPX, 0)], SUB_APPX);
-    let ok_b8 = step(&mut log, &mut *t, "B8", &[build_param_request(SUB_SESSION_ENABLE, 0)], SUB_SESSION_ENABLE);
+    let ok_c4 = step(&mut log, &mut *t, "C4", &[build_param_request(SUB_APPX, 0, MODEL_ID_PX_S1100)], SUB_APPX);
+    let ok_b8 = step(&mut log, &mut *t, "B8", &[build_param_request(SUB_SESSION_ENABLE, 0, MODEL_ID_PX_S1100)], SUB_SESSION_ENABLE);
     let ok_d0 = step(
         &mut log,
         &mut *t,
         "CF+D0",
-        &[build_param_send(SUB_CMD_COMMAND, 0, 0), build_param_request(SUB_CMD_DATA, 0)],
+        &[build_param_send(SUB_CMD_COMMAND, 0, 0, MODEL_ID_PX_S1100), build_param_request(SUB_CMD_DATA, 0, MODEL_ID_PX_S1100)],
         SUB_CMD_DATA,
     );
     log.push_str(&format!(
