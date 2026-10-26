@@ -457,7 +457,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native("VibeCity", opts, Box::new(|cc| {
-        let _ = cc;
+        cc.egui_ctx.set_visuals(egui::Visuals::light());
         Ok(Box::new(Gui::new()))
     }))
 }
