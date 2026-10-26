@@ -40,6 +40,12 @@ pub const SUB_SESSION_ENABLE: u16 = 0xB8;
 /// the device reports this id; whether its RX filters on it is unverified [U].
 pub const MODEL_ID_PX_S1100: u16 = 0x88;
 
+/// Constant found at bytes 6/7 of both native frame templates. Evidence
+/// (set_ModelID2SysEx) shows the model id is NOT written to the frame; only
+/// bytes 2/3 (EMI family/type) are patched per model family. So 0x30 here is
+/// a template constant, NOT the PX-S1100 model id.
+pub const MODEL_TEMPLATE_DEFAULT: u16 = 0x30;
+
 /// Decode the 7-bit sub-command pair of any parameter-family frame.
 pub fn sub_of(frame: &[u8]) -> Option<u16> {
     if frame.len() > OFF_SUB_CMD + 1 {
