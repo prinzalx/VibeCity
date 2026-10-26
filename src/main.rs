@@ -647,6 +647,66 @@ fn burst(msgs: &[&[u8]]) -> SweepMsg {
 /// Analyse-Lauf: sendet Status-Kanal-Varianten und ZÄHLT die Antworten.
 /// Ziel: herausfinden, welche Request-Form den Voll-Dump (~40 Rahmen) auslöst
 /// und ob die Antwort-ID dem Request folgt.
+/// Alle Parameter-IDs aus dem Save-Dump (26.10.), Master-Status zuletzt.
+static READ_ALL_IDS: &[[u8; 2]] = &[[0x10, 0x10], [0x04, 0x10], [0x07, 0x01], [0x00, 0x00], [0x10, 0x11], [0x04, 0x11], [0x00, 0x04], [0x00, 0x02], [0x00, 0x03], [0x01, 0x00], [0x01, 0x05], [0x01, 0x03], [0x01, 0x04], [0x06, 0x02], [0x06, 0x10], [0x06, 0x11], [0x03, 0x00], [0x60, 0x00], [0x61, 0x00], [0x61, 0x01], [0x02, 0x00], [0x50, 0x02], [0x50, 0x03], [0x50, 0x04], [0x50, 0x08], [0x50, 0x09], [0x52, 0x00], [0x52, 0x01], [0x53, 0x00], [0x5A, 0x00], [0x51, 0x00], [0x51, 0x01], [0x52, 0x02], [0x58, 0x01], [0x55, 0x00], [0x3A, 0x00], [0x20, 0x04], [0x20, 0x03], [0x25, 0x14], [0x0B, 0x01], [0x0A, 0x00], [0x0B, 0x03], [0x6C, 0x00], [0x6C, 0x01], [0x6C, 0x03], [0x48, 0x00], [0x52, 0x03], [0x58, 0x00], [0x01, 0x01], [0x05, 0x00], [0x62, 0x00], [0x78, 0x00], [0x7F, 0x00]];
+
+/// Lese-Durchlauf wie die App beim Save (REA: nSaveData -> getMX944AllValues):
+/// pro ID ein 11B-Read-Frame F0 44 7E 7E 7F 0F 00 <IDhi> <IDlo> 00 F7, 90 ms
+/// Takt; Antworten live ins Log. Erwartung: Status-Rahmen mit angefragter ID.
+fn run_read_all() {
+    let Some((mut t, name)) = open_piano_port() else {
+        eprintln!("Kein MIDI-Port gefunden.");
+        return;
+    };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = std::fs::create_dir_all("logs");
+    let logpath = format!("logs\\read-all-{ts}.log");
+    let mut log = format!("VibeCity Read-All · Port '{name}' · {} Requests · Zeitstempel {ts}\n", READ_ALL_IDS.len());
+    let _ = std::fs::write(&logpath, &log);
+    println!("Read-All auf '{name}': {} IDs, 11B Read-Frame (byte6=00), 90 ms Takt …", READ_ALL_IDS.len());
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    // Vorherige Wellen leerlaufen lassen.
+    while t.recv(200).is_some() {}
+    let mut total = 0usize;
+    for id in READ_ALL_IDS {
+        let frame: Vec<u8> = vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x00, id[0], id[1], 0x00, 0xF7];
+        let _ = t.send(&frame);
+        std::thread::sleep(std::time::Duration::from_millis(90));
+        let mut got = 0usize;
+        while let Some(f) = t.recv(50) {
+            got += 1;
+            total += 1;
+            let line = format!("REQ {:02X} {:02X} -> {}", id[0], id[1], hexdump(&f));
+            println!("{line}");
+            log.push_str(&line);
+            log.push('\n');
+        }
+        if got == 0 {
+            let line = format!("REQ {:02X} {:02X} -> (keine Antwort)", id[0], id[1]);
+            println!("{line}");
+            log.push_str(&line);
+            log.push('\n');
+        }
+        let _ = std::fs::write(&logpath, &log);
+    }
+    // Spätantworten einsammeln.
+    while let Some(f) = t.recv(600) {
+        total += 1;
+        let line = format!("SPÄT -> {}", hexdump(&f));
+        println!("{line}");
+        log.push_str(&line);
+        log.push('\n');
+    }
+    let done = format!("Read-All fertig: {total} Antwort(en). Log: {logpath}");
+    println!("{done}");
+    log.push_str(&done);
+    log.push('\n');
+    let _ = std::fs::write(&logpath, &log);
+}
+
 fn run_status_probe() {
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -919,6 +979,7 @@ fn main() {
         "probe" => run_probe(),
         "sweep" => run_sweep(),
         "status-probe" => run_status_probe(),
+        "read-all" => run_read_all(),
         "selftest" => {
             let secs = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(15);
             run_selftest(secs);
