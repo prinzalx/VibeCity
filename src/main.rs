@@ -678,7 +678,7 @@ fn run_status_probe() {
             break;
         };
         std::thread::sleep(std::time::Duration::from_millis(500));
-        for m in &msgs {
+        for m in msgs {
             let _ = t.send(m);
             std::thread::sleep(std::time::Duration::from_millis(250));
         }
