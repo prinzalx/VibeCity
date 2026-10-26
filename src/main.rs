@@ -647,6 +647,68 @@ fn burst(msgs: &[&[u8]]) -> SweepMsg {
 /// Analyse-Lauf: sendet Status-Kanal-Varianten und ZÄHLT die Antworten.
 /// Ziel: herausfinden, welche Request-Form den Voll-Dump (~40 Rahmen) auslöst
 /// und ob die Antwort-ID dem Request folgt.
+/// Wert aus Status-Rahmen extrahieren: bytes[13] (+ bytes[14] << 7), Typegal egal lesen wir 16 Bit.
+fn status_value(frame: &[u8]) -> Option<u16> {
+    if frame.len() >= 15 && frame.starts_with(&[0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01]) {
+        let v = frame[13] as u16;
+        let w = if frame.len() >= 16 { frame[14] as u16 } else { 0 };
+        return Some(v | (w << 7));
+    }
+    None
+}
+
+fn read_one(t: &mut Box<dyn Transport>, hi: u8, lo: u8) -> Option<Vec<u8>> {
+    let frame: Vec<u8> = vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x00, hi, lo, 0x00, 0xF7];
+    let _ = t.send(&frame);
+    std::thread::sleep(std::time::Duration::from_millis(120));
+    let start = std::time::Instant::now();
+    while start.elapsed().as_millis() < 1200 {
+        match t.recv(200) {
+            Some(f) => {
+                // Rahmen mit angefragter ID (oder Master-Status) zurückgeben.
+                if f.len() >= 9 && f[7] == hi && f[8] == lo {
+                    return Some(f);
+                }
+                if f.len() >= 9 && f[7] == 0x7F && f[8] == 0x00 {
+                    return Some(f);
+                }
+            }
+            None => break,
+        }
+    }
+    None
+}
+
+/// Schreibtest: alten Wert lesen, Wert zurückschreiben, neu lesen.
+/// Schreib-Frame (REA get_AppLinkPianoControllerSysEx, 16 B):
+/// F0 44 7E 7E 7F 0F 01 <IDhi> <IDlo> 01 00 01 00 <vlo> <vhi> F7
+fn run_set(hi: u8, lo: u8, value: u16) {
+    let Some((mut t, name)) = open_piano_port() else {
+        eprintln!("Kein MIDI-Port gefunden.");
+        return;
+    };
+    println!("Set auf '{name}': ID {hi:02X} {lo:02X} = {value} …");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    while t.recv(200).is_some() {}
+    let Some(old) = read_one(&mut t, hi, lo).as_deref().and_then(status_value) else {
+        println!("Fehler: alter Wert nicht lesbar — Abbruch (nichts geschrieben).");
+        return;
+    };
+    let frame: Vec<u8> = vec![
+        0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, hi, lo,
+        0x01, 0x00, 0x01, 0x00, (value & 0x7F) as u8, ((value >> 7) & 0x7F) as u8, 0xF7,
+    ];
+    println!(">> {}", hexdump(&frame));
+    let _ = t.send(&frame);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    while t.recv(100).is_some() {}
+    match read_one(&mut t, hi, lo).as_deref().and_then(status_value) {
+        Some(now) if now == value => println!("OK: ID {hi:02X} {lo:02X} ist jetzt {now} (war {old})."),
+        Some(now) => println!("ANTWORT: jetzt {now} (gesendet {value}, vorher {old})."),
+        None => println!("Keene Leseantwort nach Write — bitte Piano prüfen."),
+    }
+}
+
 /// Alle Parameter-IDs aus dem Save-Dump (26.10.), Master-Status zuletzt.
 static READ_ALL_IDS: &[[u8; 2]] = &[[0x10, 0x10], [0x04, 0x10], [0x07, 0x01], [0x00, 0x00], [0x10, 0x11], [0x04, 0x11], [0x00, 0x04], [0x00, 0x02], [0x00, 0x03], [0x01, 0x00], [0x01, 0x05], [0x01, 0x03], [0x01, 0x04], [0x06, 0x02], [0x06, 0x10], [0x06, 0x11], [0x03, 0x00], [0x60, 0x00], [0x61, 0x00], [0x61, 0x01], [0x02, 0x00], [0x50, 0x02], [0x50, 0x03], [0x50, 0x04], [0x50, 0x08], [0x50, 0x09], [0x52, 0x00], [0x52, 0x01], [0x53, 0x00], [0x5A, 0x00], [0x51, 0x00], [0x51, 0x01], [0x52, 0x02], [0x58, 0x01], [0x55, 0x00], [0x3A, 0x00], [0x20, 0x04], [0x20, 0x03], [0x25, 0x14], [0x0B, 0x01], [0x0A, 0x00], [0x0B, 0x03], [0x6C, 0x00], [0x6C, 0x01], [0x6C, 0x03], [0x48, 0x00], [0x52, 0x03], [0x58, 0x00], [0x01, 0x01], [0x05, 0x00], [0x62, 0x00], [0x78, 0x00], [0x7F, 0x00]];
 
@@ -980,6 +1042,16 @@ fn main() {
         "sweep" => run_sweep(),
         "status-probe" => run_status_probe(),
         "read-all" => run_read_all(),
+        "set" => {
+            // set <IDhi> <IDlo> <wert-dezimal>  (Hex-IDs, wie im Log)
+            let hi = args.get(1).and_then(|s| u8::from_str_radix(s, 16).ok());
+            let lo = args.get(2).and_then(|s| u8::from_str_radix(s, 16).ok());
+            let val = args.get(3).and_then(|s| s.parse::<u16>().ok());
+            match (hi, lo, val) {
+                (Some(h), Some(l), Some(v)) => run_set(h, l, v),
+                _ => println!("usage: vibecity set <IDhi> <IDlo> <wert>  (IDs hex, Wert dezimal)"),
+            }
+        }
         "selftest" => {
             let secs = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(15);
             run_selftest(secs);
