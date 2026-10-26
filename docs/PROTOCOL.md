@@ -94,3 +94,12 @@ a **pair**: a 30-byte SEND frame (marker byte5=0x01, COMMAND sub-id at
 templates carry model-id byte 0x30 at offset 7 ([U] for the PX-S1100). A lone
 30-byte frame with byte5=0x00 (our first implementation) draws no reply from
 the real piano — matches the observed R1 timeout.
+
+### First live device data (PX-S1100, USB, 26.10.)
+
+GM inquiry `F0 7E 7F 06 01 F7` answered with
+`F0 44 7E 7E 7F 0F 01 08 00 01 00 01 00 02 00 F7` (16 bytes, Casio-style
+GM-reply; proves outbound SysEx reaches the piano). All private parameter
+frames tried so far (single 30B old-style, new SEND 30B, new REQUEST 25B,
+CF+D0 pair without session) went unanswered — consistent with the reference
+app requiring the C4/B8 session steps before the CF/D0 pair.

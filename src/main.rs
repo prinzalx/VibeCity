@@ -443,10 +443,13 @@ fn run_wizard() {
 /// One-shot diagnosis for the user: probe + monitor, everything also
 /// written to logs\diagnose-<ts>.log so only ONE file has to be sent back.
 fn run_selftest(secs: u64) {
+    println!("Selftest startet — öffne Port, das kann ein paar Sekunden dauern …");
     let Some((mut t, name)) = open_piano_port() else {
         eprintln!("Kein MIDI-Port gefunden.");
         return;
     };
+    println!("Port '{name}' offen. Kurze Aufwärmphase für das Piano (0.5 s) …");
+    std::thread::sleep(std::time::Duration::from_millis(500));
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -454,6 +457,25 @@ fn run_selftest(secs: u64) {
     let _ = std::fs::create_dir_all("logs");
     let logpath = format!("logs\\diagnose-{ts}.log");
     let mut log = format!("VibeCity Selftest · Port '{name}' · Zeitstempel {ts}\n\n== PROBE ==\n");
+
+    // 0) GM-Inquiry bis 3× — die erste Sendung nach dem Öffnen wird gern mal
+    //    verschluckt (Beobachtung Lauf 1 vs. 2).
+    log.push_str("0) GM-Inquiry, bis 3 Versuche\n");
+    let mut gm_ok = false;
+    for attempt in 1..=3 {
+        println!("GM-Inquiry Versuch {attempt} …");
+        let _ = t.send(&[0xF0u8, 0x7E, 0x7F, 0x06, 0x01, 0xF7]);
+        if let Some(frame) = t.recv(1200) {
+            log.push_str(&format!("  Versuch {attempt}: {}\n", hexdump(&frame)));
+            println!("  Antwort: {}", hexdump(&frame));
+            gm_ok = true;
+            break;
+        }
+        log.push_str(&format!("  Versuch {attempt}: keine Antwort\n"));
+        println!("  keine Antwort");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    log.push_str(&format!("  Ergebnis GM: {}\n", if gm_ok { "Antwort bekommen" } else { "3x keine" }));
 
     let queries: Vec<(&str, Vec<u8>)> = vec![
         ("1) General-MIDI-Inquiry", vec![0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]),
@@ -463,14 +485,17 @@ fn run_selftest(secs: u64) {
         ("5) NEU Request-Frame 25B (sub=D0)", build_param_request(SUB_CMD_DATA, 0)),
     ];
     for (label, msg) in queries {
+        println!("Frage: {label}");
         log.push_str(&format!("{label}\n  send: {}\n", hexdump(&msg)));
         if let Err(e) = t.send(&msg) {
             log.push_str(&format!("  Sendefehler: {e}\n"));
+            println!("  Sendefehler: {e}");
             continue;
         }
         let mut n = 0;
         while let Some(frame) = t.recv(1200) {
             log.push_str(&format!("  antwort: {}\n", hexdump(&frame)));
+            println!("  antwort: {}", hexdump(&frame));
             n += 1;
             if n >= 4 {
                 break;
@@ -478,6 +503,7 @@ fn run_selftest(secs: u64) {
         }
         if n == 0 {
             log.push_str("  antwort: keine (Timeout 1.2 s)\n");
+            println!("  antwort: keine (Timeout 1.2 s)");
         }
     }
 
@@ -487,6 +513,7 @@ fn run_selftest(secs: u64) {
     let step = |log: &mut String, t: &mut dyn Transport, label: &str, msgs: &[Vec<u8>], want: u16| {
         for m in msgs {
             log.push_str(&format!("  {label} send: {}\n", hexdump(m)));
+            println!("Session-Schritt {label} …");
             let _ = t.send(m);
         }
         let mut got = 0;
@@ -494,6 +521,7 @@ fn run_selftest(secs: u64) {
         while let Some(frame) = t.recv(1200) {
             let sub = sub_of(&frame).map(|s| format!("{s:02X}")).unwrap_or_else(|| "--".into());
             log.push_str(&format!("  {label} antwort sub={sub}: {}\n", hexdump(&frame)));
+            println!("  {label} antwort sub={sub}: {}", hexdump(&frame));
             hit |= sub_of(&frame) == Some(want);
             got += 1;
             if got >= 5 {
@@ -502,6 +530,7 @@ fn run_selftest(secs: u64) {
         }
         if got == 0 {
             log.push_str(&format!("  {label} antwort: keine (Timeout)\n"));
+            println!("  {label} antwort: keine (Timeout)");
         }
         hit
     };
@@ -533,10 +562,30 @@ fn run_selftest(secs: u64) {
     }
     log.push_str(&format!("\nMonitor: {count} Nachricht(en) gesehen.\n\nEnde Selftest.\n"));
 
-    print!("{log}");
     match std::fs::write(&logpath, &log) {
-        Ok(()) => println!("\nGespeichert: {logpath} — genau diese Datei zurück an Hermes."),
+        Ok(()) => println!("\nGespeichert: {logpath}"),
         Err(e) => println!("\nLog schreiben fehlgeschlagen: {e}"),
+    }
+    // Müll vermeiden: alte Diagnose-Logs und Snapshots wegräumen.
+    let mut cleaned = 0usize;
+    for dir in ["logs", "."] {
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for e in rd.flatten() {
+                let p = e.path();
+                let name = p.file_name().and_then(|n| n.to_str().map(String::from)).unwrap_or_default();
+                let keep = name == "session-cli.log" || logpath.ends_with(&name);
+                let stale = (name.starts_with("diagnose-") || name.starts_with("snapshot-"))
+                    && (name.ends_with(".log") || name.ends_with(".json"));
+                if stale && !keep {
+                    if std::fs::remove_file(&p).is_ok() {
+                        cleaned += 1;
+                    }
+                }
+            }
+        }
+    }
+    if cleaned > 0 {
+        println!("{cleaned} alte Log-/Snapshot-Datei(en) gelöscht (Müllabfuhr).");
     }
 }
 
