@@ -641,6 +641,7 @@ fn run_sweep() {
     pair.extend_from_slice(&build_param_request(SUB_CMD_DATA, 0, MODEL_TEMPLATE_DEFAULT));
 
     let candidates: Vec<(&str, Vec<u8>)> = vec![
+        ("HANDSHAKE BulkDumpRequest (F0 44 19 03 7F 04 50 03 00 F7)", vec![0xF0, 0x44, 0x19, 0x03, 0x7F, 0x04, 0x50, 0x03, 0x00, 0xF7]),
         ("GM-Inquiry (Kontrolle)", vec![0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]),
         ("C4 Session-Frage (Header 19 03)", build_param_request(SUB_APPX, 0, MODEL_TEMPLATE_DEFAULT)),
         ("C4 Session-Frage (Header 17 04)", old_header),
@@ -661,17 +662,31 @@ fn run_sweep() {
         };
         std::thread::sleep(std::time::Duration::from_millis(500));
         let _ = t.send(msg);
-        let reply = t.recv(1500);
+        // Mehrere Rahmen sammeln (ein Handshake kann Bulk-Dump liefern), bis 1.5 s Ruhe.
+        let mut frames: Vec<Vec<u8>> = Vec::new();
+        let start = std::time::Instant::now();
+        while frames.len() < 40 {
+            let idle = if frames.is_empty() { 1500 } else { 400 };
+            match t.recv(idle) {
+                Some(f) => frames.push(f),
+                None => break,
+            }
+            if start.elapsed().as_millis() > 5000 {
+                break;
+            }
+        }
         drop(t); // Port zu, nächster Kandidat
         log.push_str(&format!("K{i} {label} @ {name}\n  send: {}\n", hexdump(msg)));
-        match &reply {
-            Some(frame) => log.push_str(&format!("  ANTWORT: {} (sub={:02X})\n", hexdump(frame), sub_of(frame).unwrap_or(0))),
-            None => log.push_str("  antwort: keine\n"),
+        if frames.is_empty() {
+            log.push_str("  antwort: keine\n");
+            println!("K{i} {label}: keine");
+        } else {
+            log.push_str(&format!("  ANTWORT: {} Rahmen\n", frames.len()));
+            for f in &frames[..frames.len().min(3)] {
+                log.push_str(&format!("    {}\n", hexdump(f)));
+            }
+            println!("K{i} {label}: ANTWORT {} Rahmen — {}", frames.len(), hexdump(&frames[0]));
         }
-        println!(
-            "K{i} {label}: {}",
-            match &reply { Some(f) => format!("ANTWORT {}", hexdump(f)), None => "keine".into() }
-        );
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
 
