@@ -35,6 +35,7 @@ struct Row {
     typ: String,   // "Wert" | "Flag"
     value: u16,
     edited: String,
+    sv: f32,
 }
 
 enum Cmd {
@@ -157,7 +158,7 @@ impl Worker {
             if let Some(f) = answer {
                 let typ = if f.len() > 10 && f[10] == 0x02 { "Wert" } else { "Flag" };
                 let value = status_value(&f).unwrap_or(0);
-                rows.push((i, Row { id, typ: typ.to_string(), value, edited: value.to_string() }));
+                rows.push((i, Row { id, typ: typ.to_string(), value, edited: value.to_string(), sv: value as f32 }));
             }
             self.emit(Ev::Progress(i + 1));
         }
@@ -198,7 +199,7 @@ impl Worker {
                         let _ = self.ev_tx.send(Ev::Log(format!("OK {} = {v}", fmt_id(id))));
                         let _ = self.ev_tx.send(Ev::One(
                             IDS.iter().position(|x| *x == id).unwrap_or(usize::MAX),
-                            Row { id, typ: "Wert".into(), value: v, edited: v.to_string() },
+                            Row { id, typ: "Wert".into(), value: v, edited: v.to_string(), sv: v as f32 },
                         ));
                         ok = true;
                         break;
@@ -325,6 +326,32 @@ const META: &[(&str, usize)] = &[
     ("Status (Master)", 9),
 ];
 
+// Widget-Typ je ID (bewiesene Typen aus read-all; Bereiche konservativ, nachjustierbar).
+enum Spec { Check, Slider(f32, f32, &'static str), Choice(&'static [&'static str], u16) }
+const SPEC: &[Spec] = &[
+    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Check,
+    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
+    Spec::Choice(&["0", "1", "2", "3"], 0), Spec::Slider(0.0, 127.0, ""), Spec::Choice(&["0", "1", "2", "3"], 0),
+    Spec::Check, Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Choice(&["0", "1", "2", "3"], 0),
+    Spec::Check, Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""), Spec::Slider(3000.0, 6000.0, " Hz(0,1)"), Spec::Choice(&["0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"], 0),
+    Spec::Choice(&["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"], 0),
+    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
+    Spec::Check, Spec::Check, Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Choice(&["2","3","4","5","6","7","8","9","10","11","12"], 2), Spec::Slider(30.0, 200.0, " bpm"), Spec::Slider(0.0, 127.0, ""),
+    Spec::Choice(&["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"], 1), Spec::Check, Spec::Check,
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Check, Spec::Check,
+    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Check,
+    Spec::Check,
+    Spec::Slider(0.0, 127.0, ""),
+];
+
 impl eframe::App for Gui {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.drain_events();
@@ -445,32 +472,51 @@ impl eframe::App for Gui {
                         }
                         ui.label(META[i].0);
                         ui.label(fmt_id(*meta));
-                        match &mut self.rows[i] {
-                            Some(r) => {
-                                ui.label(r.typ.clone());
-                                let resp = ui.add_sized(
-                                    [70.0, 20.0],
-                                    egui::TextEdit::singleline(&mut self.rows[i].as_mut().unwrap().edited)
-                                        .desired_width(60.0),
-                                );
-                                let write = ui.add_enabled_ui(!known_bad(*meta), |ui| {
-                                    ui.button("Schreiben")
-                                });
-                                if write.inner.clicked()
-                                    || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-                                {
-                                    if let Ok(v) = self.rows[i].as_ref().unwrap().edited.parse::<u16>() {
-                                        let _ = self.cmd_tx.send(Cmd::Write { id: *meta, value: v });
-                                    } else {
-                                        self.log.push("Wert ist keine Zahl.".into());
+                        let mut send: Option<u16> = None;
+                        if let Some(rw) = &mut self.rows[i] {
+                            ui.label(rw.typ.clone());
+                            match &SPEC[i] {
+                                Spec::Check => {
+                                    let mut on = rw.value > 0;
+                                    if ui.checkbox(&mut on, "").changed() {
+                                        rw.value = on as u16;
+                                        send = Some(on as u16);
+                                    }
+                                }
+                                Spec::Slider(lo, hi, suf) => {
+                                    let txt = if *suf == " Hz(0,1)" { format!("{:.1} Hz", rw.sv / 10.0) } else { format!("{}", rw.sv as i32) };
+                                    let resp = ui.add(egui::Slider::new(&mut rw.sv, *lo..=*hi).text(txt));
+                                    if resp.drag_stopped() || resp.lost_focus() {
+                                        send = Some(rw.sv as u16);
+                                    }
+                                }
+                                Spec::Choice(opts, shift) => {
+                                    let cur = (rw.value as i32 - *shift as i32).max(0).min(opts.len() as i32 - 1) as usize;
+                                    let sel = ui.input(|_i| false); let _ = sel;
+                                    let mut pick: Option<usize> = None;
+                                    egui::ComboBox::new(("cb", i), "")
+                                        .selected_text(opts.get(cur).copied().unwrap_or("?"))
+                                        .show_ui(ui, |ui| {
+                                            for (k, o) in opts.iter().enumerate() {
+                                                if ui.selectable_label(k == cur, *o).clicked() {
+                                                    pick = Some(k);
+                                                }
+                                            }
+                                        });
+                                    if let Some(k) = pick {
+                                        rw.value = (k + *shift as usize) as u16;
+                                        send = Some(rw.value);
                                     }
                                 }
                             }
-                            None => {
-                                ui.label("–");
-                                ui.label("–");
-                                ui.label("");
-                            }
+                        } else {
+                            ui.label("–");
+                            ui.label("–");
+                            ui.label("");
+                        }
+                        if let Some(v) = send {
+                            let _ = self.cmd_tx.send(Cmd::Write { id: *meta, value: v });
+                            self.log.push(format!("→ {} {} = {}", fmt_id(*meta), META[i].0, v));
                         }
                         ui.label(if known_bad(*meta) { "(nicht in Tabelle)" } else { "" });
                         ui.end_row();
