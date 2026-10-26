@@ -74,68 +74,164 @@ fn read_line(prompt: &str) -> String {
     line.trim().to_string()
 }
 
-/// Step-by-step hardware wizard (dev tool, R0..W1). Results land in
-/// hardware-tests-results.md next to the exe; send that file back.
+#[allow(dead_code)]
+/// Does this port name plausibly belong to the piano (not a synth/HW mapper)?
+fn looks_piano(name: &str) -> bool {
+    let n = name.to_lowercase();
+    ["casio", "px-s", "privia", "cdp", "apex", "cedura", "midi", "ble", "bluetooth"]
+        .iter()
+        .any(|k| n.contains(k))
+        && !n.contains("wavetable")
+        && !n.contains("mapper")
+        && !n.contains("decomposer")
+}
+
+#[allow(dead_code)]
+fn fmt_ports(ports: &[(usize, String, String)]) -> String {
+    let mut s = String::new();
+    for (i, name, kind) in ports {
+        let hint = if name.to_lowercase().contains("wavetable") {
+            "  ← Windows-eigene Soundbank, NICHT das Piano"
+        } else if looks_piano(name) {
+            "  ← könnte das Piano sein"
+        } else {
+            ""
+        };
+        s.push_str(&format!("  [{i}] {name} ({kind}){hint}\n"));
+    }
+    s
+}
+
+/// Step-by-step hardware wizard (dev tool) for users with zero prior
+/// knowledge. Results land in hardware-tests-results.md next to the exe.
 fn run_wizard() {
-    println!("=== VibeCity Wizard (Entwicklungs-Werkzeug) ===");
+    println!("=== VibeCity Wizard ===");
+    println!("Dieser Wizard prüft Schritt für Schritt, ob der PC mit dem");
+    println!("Casio-Piano sprechen kann. Am Ende steht alles in der Datei");
+    println!("hardware-tests-results.md — die bitte zurück an Hermes.\n");
+
+    // ---------- Schritt 0: Vorbereitung ----------
+    println!("--- Vorbereitung ---");
+    println!("Womit ist das Piano verbunden?");
+    println!("  [1] USB-Kabel   (empfohlen für den ersten Test)");
+    println!("  [2] WU-BT10 Bluetooth-Dongle");
+    let how = read_line("  Auswahl (1/2, Enter = 1): ");
+    let how = if how.starts_with('2') { 2 } else { 1 };
+    if how == 2 {
+        println!("  So geht Bluetooth beim WU-BT10:");
+        println!("  - Der kleine Dongle steckt in der USB-Buchse des Pianos (USB TO HOST).");
+        println!("  - Piano EINSCHALTEN — der Dongle bekommt dann Strom und sendet sein Signal.");
+        println!("  - Kein Koppeln/Pairing nötig: Windows findet das Piano automatisch,");
+        println!("    genau wie das Handy es macht (belegt aus der Referenz-App).");
+        println!("  - Der PC braucht Bluetooth 4.0 oder neuer und Bluetooth muss an sein.");
+    } else {
+        println!("  So geht USB:");
+        println!("  - USB-Kabel von Piano (USB TO HOST) in den PC — Datenkabel, kein reines Ladekabel.");
+        println!("  - Piano EINSCHALTEN.");
+    }
+    let ready = ask("Ist das Piano jetzt eingeschaltet und verbunden?");
+    if ready == 'n' {
+        println!("  Dann bitte jetzt Piano einschalten und Kabel/Dongle prüfen,");
+        println!("  danach den Wizard mit 'vibecity wizard' neu starten.");
+    }
+
+    // ---------- Ports finden (mit Neu-Scan-Möglichkeit) ----------
     let mut t: Box<dyn Transport>;
+    #[allow(unused_mut)]
     let mut port_name = String::from("mock");
 
     #[cfg(windows)]
     {
-        let ports = match vibecity::transport::winmm::list_ports() {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("Fehler Portliste: {e}");
-                return;
+        loop {
+            let ports = match vibecity::transport::winmm::list_ports() {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Fehler Portliste: {e}");
+                    return;
+                }
+            };
+            let listed: Vec<(usize, String, String)> = ports
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (i, p.name.clone(), format!("{:?}", p.kind)))
+                .collect();
+            println!("\nGefundene MIDI-Ports:");
+            print!("{}", fmt_ports(&listed));
+            if ports.is_empty() {
+                println!("  (keine) — Prüfliste: Piano an? Kabel steckt? Anderen USB-Port testen.");
+                println!("  Bei Bluetooth: ist der Adapter an? Piano eingeschaltet?");
             }
-        };
-        if ports.is_empty() {
-            println!("Keine MIDI-Ports gefunden. USB-Kabel/Dongle prüfen.");
-        }
-        for (i, p) in ports.iter().enumerate() {
-            println!("  [{i}] {p:?}");
-        }
-        let sel = read_line("Port für den Test wählen (Nummer, Enter = Abbruch): ");
-        let Ok(idx) = sel.parse::<usize>() else {
-            println!("Abbruch.");
-            return;
-        };
-        let Some(p) = ports.get(idx) else {
-            println!("Abbruch.");
-            return;
-        };
-        port_name = p.name.clone();
-        match vibecity::transport::winmm::WinMidiTransport::open(&port_name) {
-            Ok(w) => t = Box::new(w),
-            Err(e) => {
-                eprintln!("Verbindung fehlgeschlagen: {e}");
+            let sel = read_line("Nummer wählen · r = Neu scannen · Enter = Abbruch: ");
+            if sel.eq_ignore_ascii_case("r") {
+                println!("  (Neuer Suchlauf …)");
+                continue;
+            }
+            let Ok(idx) = sel.parse::<usize>() else {
+                println!("Abbruch.");
                 return;
+            };
+            let Some(name) = listed.get(idx).map(|p| p.1.clone()) else {
+                println!("Diese Nummer gibt es nicht, zurück zur Liste.");
+                continue;
+            };
+            if !looks_piano(&name) {
+                println!("  Hinweis: '{name}' klingt nicht nach Piano (eher Windows-Soundbank).");
+                println!("  Ein Test damit führt gleich wahrscheinlich zu 'timeout'.");
+                if ask("Trotzdem damit testen?") != 'j' {
+                    continue;
+                }
+            }
+            match vibecity::transport::winmm::WinMidiTransport::open(&name) {
+                Ok(w) => {
+                    t = Box::new(w);
+                    port_name = name;
+                    break;
+                }
+                Err(e) => {
+                    println!("  Verbindung fehlgeschlagen: {e}");
+                    if ask("Anderen Port wählen?") != 'j' {
+                        return;
+                    }
+                }
             }
         }
     }
     #[cfg(not(windows))]
     {
-        println!("(Nicht-Windows-Build: Mock-Gerät, nur Demonstration)");
+        println!("\n(Nicht-Windows-Build: Mock-Gerät, nur Demonstration)");
         t = Box::new(MockTransport::default());
     }
 
     let mut results: Vec<(String, char)> = Vec::new();
 
-    // S1 — R0: Port sichtbar (gerade passiert)
-    println!("\nR0 Port: Port '{port_name}' wurde gefunden und verbunden.\nRückweg: App schließen, Piano unverändert.");
-    results.push((format!("R0 port visible ({port_name})"), ask("R0 ok?")));
+    // ---------- R0: Port sichtbar ----------
+    println!("\n--- Schritt 1/4 · R0 · Verbindung ---");
+    println!("Ziel: Der PC findet das Piano als MIDI-Port und kann es öffnen.");
+    println!("Ergebnis: Port '{port_name}' wurde gefunden und geöffnet.");
+    println!("Rückweg: App schließen — am Piano ändert sich dabei nichts.");
+    results.push((format!("R0 port visible ({port_name})"), ask("Ist das der richtige Piano-Port?")));
 
-    // S2 — R1: ein Parameter lesbar
-    println!("\nR1 Lesen: frage Parameter 0 ab …");
-    match get_param(&mut *t, 0) {
-        Ok(v) => println!("  Parameter 0 = {v}"),
-        Err(e) => println!("  Fehler: {e}"),
+    // ---------- R1: Lesen ----------
+    println!("\n--- Schritt 2/4 · R1 · Lesen ---");
+    println!("Ziel: Das Piano beantwortet unsere erste Frage (Parameter 0).");
+    println!("Frage: 'Zeig mir Wert 0' · Antwort kommt als SysEx-Nachricht zurück.");
+    let r1 = get_param(&mut *t, 0);
+    match &r1 {
+        Ok(v) => println!("Antwort: Parameter 0 = {v}"),
+        Err(e) => println!("Fehler: {e}"),
     }
-    results.push(("R1 get param 0".into(), ask("Antwort plausibel erhalten?")));
+    let a1 = ask("Antwort erhalten und plausibel?");
+    if a1 != 'j' {
+        println!("  Typische Ursachen bei 'timeout':");
+        println!("  - Port war die Windows-Soundbank (antwortet nie auf Casio-Fragen)");
+        println!("  - Piano war im Moment der Frage aus");
+        println!("  - Bei Bluetooth: Signal weg (Dongle/Piano aus).");
+    }
+    results.push(("R1 get param 0".into(), a1));
 
-    // S3 — R2: dump snapshot
-    println!("\nR2 Snapshot: alle 57 Parameter werden abgefragt …");
+    // ---------- R2: Snapshot ----------
+    println!("\n--- Schritt 3/4 · R2 · Snapshot ---");
+    println!("Ziel: Alle 57 Parameter abfragen und als Datei sichern (Startpunkt für später).");
     let mut dump_ok = true;
     let mut json = String::from("{\n");
     for id in 0..PARAM_COUNT {
@@ -154,13 +250,16 @@ fn run_wizard() {
         .unwrap_or(0);
     let file = format!("snapshot-{ts}.json");
     if std::fs::write(&file, json).is_ok() {
-        println!("  Snapshot geschrieben: {file} (Fehler: {})", if dump_ok { "keine" } else { "mind. 1" });
+        println!("Ergebnis: {file} geschrieben (leere Werte: {})", if dump_ok { "keine" } else { "mind. 1 — jedes null heißt: keine Antwort" });
     }
-    results.push(("R2 snapshot".into(), ask("Dump ok?")));
+    results.push(("R2 snapshot".into(), ask("Snapshot ok?")));
 
-    // S4 — W1: harmloser Parameter setzen + readback
-    println!("\nW1 Schreiben: Parameter-ID und Zielwert, z. B. '3=7' (Enter = überspringen).");
-    let input = read_line("  id=value: ");
+    // ---------- W1: Schreiben ----------
+    println!("\n--- Schritt 4/4 · W1 · Schreiben ---");
+    println!("Ziel: Dem Piano einen neuen Wert mitteilen und prüfen, dass er ankam.");
+    println!("Beispiel: '3=7' bedeutet: Parameter 3 auf Wert 7 setzen.");
+    println!("Rückweg: alten Wert notieren und mit 'vibecity set 3 <alt>' zurücksetzen.");
+    let input = read_line("  id=value eingeben (Enter = überspringen): ");
     if input.is_empty() {
         results.push(("W1 set+readback".into(), 's'));
     } else {
@@ -171,13 +270,12 @@ fn run_wizard() {
             (Ok(id), Ok(val)) if id < PARAM_COUNT => {
                 match set_param(&mut *t, id, val) {
                     Ok(()) => match get_param(&mut *t, id) {
-                        Ok(back) => println!("  Readback Parameter {id} = {back}"),
+                        Ok(back) => println!("  Readback: Parameter {id} = {back}"),
                         Err(e) => println!("  Readback-Fehler: {e}"),
                     },
                     Err(e) => println!("  Set-Fehler: {e}"),
                 }
-                println!("  Rückweg: alten Wert mit 'set {id} <alt>' zurückschreiben.");
-                results.push((format!("W1 set {id}={val}"), ask("Gerät hat Wert übernommen (gelesen/gehört)?")));
+                results.push((format!("W1 set {id}={val}"), ask("Hat das Piano den Wert übernommen (gelesen/gehört)?")));
             }
             _ => {
                 println!("  ungültige Eingabe, übersprungen");
@@ -186,8 +284,11 @@ fn run_wizard() {
         }
     }
 
-    // Ergebnis-Datei
-    let mut md = format!("# Hardware-Test-Ergebnisse\n\nPort: `{port_name}` · Zeitstempel: {ts}\n\n| Schritt | Ergebnis |\n|---|---|\n");
+    // ---------- Ergebnis ----------
+    let mut md = format!(
+        "# Hardware-Test-Ergebnisse\n\nPort: `{port_name}` · Verbindung: {} · Zeitstempel: {ts}\n\n| Schritt | Ergebnis |\n|---|---|\n",
+        if how == 2 { "WU-BT10 (BLE)" } else { "USB-Kabel" }
+    );
     for (name, o) in &results {
         let s = match o {
             'j' => "ok",
@@ -196,7 +297,7 @@ fn run_wizard() {
         };
         md.push_str(&format!("| {name} | {s} |\n"));
     }
-    if std::fs::write("hardware-tests-results.md", md).is_ok() {
+    if std::fs::write("hardware-tests-results.md", &md).is_ok() {
         println!("\nErgebnisse gespeichert: hardware-tests-results.md — diese Datei zurück an Hermes.");
     }
     println!("Wizard fertig. (Entwicklungs-Werkzeug, darf später weg.)");

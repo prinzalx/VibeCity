@@ -1,0 +1,92 @@
+C:\BLOB\output\010\06_vibecity>C:\BLOB\output\010\06_vibecity\tgt-win\x86_64-pc-windows-gnu\release\vibecity.exe wizard
+=== VibeCity Wizard (Entwicklungs-Werkzeug) ===
+  [0] PortInfo { name: "Microsoft GS Wavetable Synth", kind: Unknown }
+Port für den Test wählen (Nummer, Enter = Abbruch): 0
+
+R0 Port: Port 'Microsoft GS Wavetable Synth' wurde gefunden und verbunden.
+Rückweg: App schließen, Piano unverändert.
+R0 ok? [j/n/s]: j
+
+R1 Lesen: frage Parameter 0 ab …
+  Fehler: timeout waiting for reply
+Antwort plausibel erhalten? [j/n/s]: s
+
+R2 Snapshot: alle 57 Parameter werden abgefragt …
+  Snapshot geschrieben: snapshot-1793001133.json (Fehler: mind. 1)
+Dump ok? [j/n/s]: n
+
+W1 Schreiben: Parameter-ID und Zielwert, z. B. '3=7' (Enter = überspringen).
+  id=value:
+
+Ergebnisse gespeichert: hardware-tests-results.md — diese Datei zurück an Hermes.
+Wizard fertig. (Entwicklungs-Werkzeug, darf später weg.)
+
+C:\BLOB\output\010\06_vibecity>dir
+ Datenträger in Laufwerk C: ist OS
+ Volumeseriennummer: CEC9-0160
+
+ Verzeichnis von C:\BLOB\output\010\06_vibecity
+
+26.10.2026  08:52    <DIR>          .
+25.10.2026  19:25    <DIR>          ..
+25.10.2026  21:17    <DIR>          .git
+25.10.2026  19:53    <DIR>          .github
+25.10.2026  19:56                40 .gitignore
+25.10.2026  19:50            23.127 Cargo.lock
+25.10.2026  19:50               331 Cargo.toml
+25.10.2026  21:00    <DIR>          docs
+26.10.2026  08:52               261 hardware-tests-results.md
+25.10.2026  19:50    <DIR>          logs
+26.10.2026  08:52             1.133 snapshot-1793001133.json
+25.10.2026  21:17    <DIR>          src
+25.10.2026  19:50    <DIR>          tgt-linux
+25.10.2026  19:56    <DIR>          tgt-win
+               5 Datei(en),         24.892 Bytes
+               9 Verzeichnis(se), 613.391.585.280 Bytes frei
+
+C:\BLOB\output\010\06_vibecity>cat hardware-tests-results.md
+Der Befehl "cat" ist entweder falsch geschrieben oder
+konnte nicht gefunden werden.
+
+C:\BLOB\output\010\06_vibecity>type hardware-tests-results.md
+# Hardware-Test-Ergebnisse
+
+Port: `Microsoft GS Wavetable Synth` ┬À Zeitstempel: 1793001133
+
+| Schritt | Ergebnis |
+|---|---|
+| R0 port visible (Microsoft GS Wavetable Synth) | ok |
+| R1 get param 0 | skip |
+| R2 snapshot | PROBLEM |
+| W1 set+readback | skip |
+
+C:\BLOB\output\010\06_vibecity>mv hardware-tests-results.md.000
+Der Befehl "mv" ist entweder falsch geschrieben oder
+konnte nicht gefunden werden.
+
+C:\BLOB\output\010\06_vibecity>ren hardware-tests-results.md hardware-tests-results.md.000
+
+C:\BLOB\output\010\06_vibecity>C:\BLOB\output\010\06_vibecity\tgt-win\x86_64-pc-windows-gnu\release\vibecity.exe wizard
+=== VibeCity Wizard (Entwicklungs-Werkzeug) ===
+  [0] PortInfo { name: "Microsoft GS Wavetable Synth", kind: Unknown }
+Port für den Test wählen (Nummer, Enter = Abbruch): 0
+
+R0 Port: Port 'Microsoft GS Wavetable Synth' wurde gefunden und verbunden.
+Rückweg: App schließen, Piano unverändert.
+R0 ok? [j/n/s]: j
+
+R1 Lesen: frage Parameter 0 ab …
+  Fehler: timeout waiting for reply
+Antwort plausibel erhalten? [j/n/s]: n
+
+R2 Snapshot: alle 57 Parameter werden abgefragt …
+  Snapshot geschrieben: snapshot-1793001231.json (Fehler: mind. 1)
+Dump ok? [j/n/s]: keine ahnung
+
+W1 Schreiben: Parameter-ID und Zielwert, z. B. '3=7' (Enter = überspringen).
+  id=value:
+
+Ergebnisse gespeichert: hardware-tests-results.md — diese Datei zurück an Hermes.
+Wizard fertig. (Entwicklungs-Werkzeug, darf später weg.)
+
+C:\BLOB\output\010\06_vibecity>

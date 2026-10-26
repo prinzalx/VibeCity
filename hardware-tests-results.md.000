@@ -1,0 +1,10 @@
+# Hardware-Test-Ergebnisse
+
+Port: `Microsoft GS Wavetable Synth` · Zeitstempel: 1793001133
+
+| Schritt | Ergebnis |
+|---|---|
+| R0 port visible (Microsoft GS Wavetable Synth) | ok |
+| R1 get param 0 | skip |
+| R2 snapshot | PROBLEM |
+| W1 set+readback | skip |
