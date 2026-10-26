@@ -620,6 +620,13 @@ fn run_selftest(secs: u64) {
     }
 }
 
+/// Eine Nachricht oder ein Bursts mehrerer Nachrichten (App-Folge 1:1).
+type SweepMsg = Vec<Vec<u8>>;
+
+fn burst(msgs: &[&[u8]]) -> SweepMsg {
+    msgs.iter().map(|m| m.to_vec()).collect()
+}
+
 /// Dialekt-Sweep: jeder Kandidat bekommt einen FRISCHEN Port-Öffnungsvorgang,
 /// weil das Piano offenbar nur die allererste Nachricht nach dem Öffnen
 /// beantwortet (Beobachtung Läufe 1/4/5). Ein Lauf, alle Kandidaten, Schluss
@@ -640,28 +647,48 @@ fn run_sweep() {
     let mut pair = build_param_send(SUB_CMD_COMMAND, 0, 0, MODEL_TEMPLATE_DEFAULT);
     pair.extend_from_slice(&build_param_request(SUB_CMD_DATA, 0, MODEL_TEMPLATE_DEFAULT));
 
-    let candidates: Vec<(&str, Vec<u8>)> = vec![
-        ("HANDSHAKE BulkDumpRequest (F0 44 19 03 7F 04 50 03 00 F7)", vec![0xF0, 0x44, 0x19, 0x03, 0x7F, 0x04, 0x50, 0x03, 0x00, 0xF7]),
-        ("GM-Inquiry (Kontrolle)", vec![0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]),
-        ("C4 Session-Frage (Header 19 03)", build_param_request(SUB_APPX, 0, MODEL_TEMPLATE_DEFAULT)),
-        ("C4 Session-Frage (Header 17 04)", old_header),
-        ("D0 Lesebitte (19 03)", build_param_request(SUB_CMD_DATA, 0, MODEL_TEMPLATE_DEFAULT)),
-        ("B8 Session-Enable (19 03)", build_param_request(SUB_SESSION_ENABLE, 0, MODEL_TEMPLATE_DEFAULT)),
-        ("CF Sende-Rahmen 30B (19 03)", build_param_send(SUB_CMD_COMMAND, 0, 0, MODEL_TEMPLATE_DEFAULT)),
-        ("CF+D0 Paar (19 03)", pair),
-        ("MUI5-Alt F0 43 19 0C 00 F7", vec![0xF0, 0x43, 0x19, 0x0C, 0x00, 0xF7]),
-        ("GM System On F0 7E 7F 09 01 F7", vec![0xF0, 0x7E, 0x7F, 0x09, 0x01, 0xF7]),
+    // App-eigene Eröffnungsfolge (REA: AppxGetModelID -> StartOfBulkDump ->
+    // Handshake -> Request(sub=B8)). PX-S-Familien-Header 19 03 bereits
+    // gemäß set_ModelID2SysEx eingesetzt.
+    let bulk_start: &[u8] = &[0xF0, 0x44, 0x19, 0x03, 0x7F, 0x08, 0x01, 0xF7];
+    let handshake: &[u8] = &[0xF0, 0x44, 0x19, 0x03, 0x7F, 0x04, 0x50, 0x03, 0x00, 0xF7];
+    let b8 = build_param_request(SUB_SESSION_ENABLE, 0, MODEL_TEMPLATE_DEFAULT);
+    let c4 = build_param_request(SUB_APPX, 0, MODEL_TEMPLATE_DEFAULT);
+    let cf = build_param_send(SUB_CMD_COMMAND, 0, 0, MODEL_TEMPLATE_DEFAULT);
+    let d0 = build_param_request(SUB_CMD_DATA, 0, MODEL_TEMPLATE_DEFAULT);
+    let mut pair = cf.clone();
+    pair.extend_from_slice(&d0.clone());
+
+    let candidates: Vec<(&str, SweepMsg)> = vec![
+        (
+            "SESSION-PREP NEU (Start+B8+CF+D0)",
+            burst(&[bulk_start, &b8, &cf, &d0]),
+        ),
+        (
+            "SESSION-PREP mit Handshake (Start+HS+C4+CF+D0)",
+            burst(&[bulk_start, handshake, &c4, &cf, &d0]),
+        ),
+        ("HANDSHAKE einzeln", vec![handshake.to_vec()]),
+        ("BULK-START einzeln", vec![bulk_start.to_vec()]),
+        ("GM-Inquiry (Kontrolle)", vec![vec![0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]]),
+        ("C4 Session-Frage (19 03)", vec![c4]),
+        ("D0 Lesebitte (19 03)", vec![d0.clone()]),
+        ("CF+D0 Paar (19 03)", burst(&[&cf, &d0])),
+        ("C4 Session-Frage (17 04)", vec![old_header]),
     ];
 
     println!("Sweep: {} Kandidaten, je mit frischer Port-Öffnung …", candidates.len());
-    for (i, (label, msg)) in candidates.iter().enumerate() {
+    for (i, (label, msgs)) in candidates.iter().enumerate() {
         // frischer Port für jeden Kandidaten
         let Some((mut t, name)) = open_piano_port() else {
             log.push_str(&format!("K{i} {label}: Port nicht gefunden — Abbruch\n"));
             break;
         };
         std::thread::sleep(std::time::Duration::from_millis(500));
-        let _ = t.send(msg);
+        for m in msgs {
+            let _ = t.send(m);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
         // Mehrere Rahmen sammeln (ein Handshake kann Bulk-Dump liefern), bis 1.5 s Ruhe.
         let mut frames: Vec<Vec<u8>> = Vec::new();
         let start = std::time::Instant::now();
@@ -676,7 +703,10 @@ fn run_sweep() {
             }
         }
         drop(t); // Port zu, nächster Kandidat
-        log.push_str(&format!("K{i} {label} @ {name}\n  send: {}\n", hexdump(msg)));
+        log.push_str(&format!("K{i} {label} @ {name}\n"));
+        for m in msgs {
+            log.push_str(&format!("  send: {}\n", hexdump(m)));
+        }
         if frames.is_empty() {
             log.push_str("  antwort: keine\n");
             println!("K{i} {label}: keine");
