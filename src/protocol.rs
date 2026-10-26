@@ -4,8 +4,11 @@
 
 use crate::codec::{crc32, dec7_2, dec7_5, enc7_2, enc7_5};
 
-/// Common leading bytes (evidence).
-pub const HEADER: [u8; 5] = [0xF0, 0x44, 0x17, 0x04, 0x7F];
+/// Common leading bytes. Evidence (set_ModelID2SysEx + model name table in
+/// libsssg.so: PX-S1100 = "MX-950", AppxModelID 0x1F, family group
+/// {0x19,0x1a,0x1f,0x20}) patches bytes 2/3 to 0x19/0x03 for the PX-S
+/// Privia family. The raw template default 17/04 is the un-patched value.
+pub const HEADER: [u8; 5] = [0xF0, 0x44, 0x19, 0x03, 0x7F];
 /// Parameter message total length (evidence).
 pub const PARAM_MSG_LEN: usize = 30;
 /// Offset of the sub-command 7-bit pair (evidence).
@@ -35,10 +38,9 @@ pub const SUB_CMD_COMMAND_LINK34: u16 = 0xCD;
 pub const SUB_APPX: u16 = 0xC4;
 pub const SUB_SESSION_ENABLE: u16 = 0xB8;
 
-/// Model id announced by the PX-S1100 in its GM-inquiry answer
-/// (`F0 44 7E 7E 7F 0F 01 08 …` → 7-bit pair 01 08 = 0x88) — evidence that
-/// the device reports this id; whether its RX filters on it is unverified [U].
-pub const MODEL_ID_PX_S1100: u16 = 0x88;
+/// AppxModelID of the PX-S1100 (native table entry "PX-S1100(MX-950)").
+/// set_ModelID2SysEx maps its family group to header bytes 2/3 = 0x19/0x03.
+pub const MODEL_ID_PX_S1100: u16 = 0x1F;
 
 /// Constant found at bytes 6/7 of both native frame templates. Evidence
 /// (set_ModelID2SysEx) shows the model id is NOT written to the frame; only
@@ -96,8 +98,8 @@ pub fn build_param_send(sub_cmd: u16, operand: u32, link_type: u8, model_id: u16
     }
     m[5] = 0x01; // send-marker (evidence)
     let mid = enc7_2(model_id);
-    m[6] = mid[0]; // model-id slot, 7-bit pair (template default 0x30 [U])
-    m[7] = mid[1];
+    m[6] = mid[1]; // model-id slot, big-endian 7-bit pair per template bytes
+    m[7] = mid[0]; // ("00 30" for the 0x30 template constant)
     let cmd = enc7_2(sub_cmd);
     m[OFF_SUB_CMD] = cmd[0];
     m[OFF_SUB_CMD + 1] = cmd[1];
@@ -119,8 +121,8 @@ pub fn build_param_request(sub_cmd: u16, link_type: u8, model_id: u16) -> Vec<u8
     }
     m[5] = 0x00; // request-marker (evidence)
     let mid = enc7_2(model_id);
-    m[6] = mid[0]; // model-id slot, 7-bit pair (template default 0x30 [U])
-    m[7] = mid[1];
+    m[6] = mid[1]; // model-id slot, big-endian 7-bit pair per template bytes
+    m[7] = mid[0];
     let cmd = enc7_2(sub_cmd);
     m[OFF_SUB_CMD] = cmd[0];
     m[OFF_SUB_CMD + 1] = cmd[1];
@@ -184,9 +186,11 @@ mod tests {
         // Templates from decompiled get_IndividualParameterSend/Request.
         let s = build_param_send(SUB_CMD_COMMAND, 0, 0, MODEL_ID_PX_S1100);
         assert_eq!(s.len(), 30);
-        assert_eq!(&s[..5], &HEADER[..]);
+        // PX-S1100 family header per set_ModelID2SysEx (MX-950 → 19 03)
+        assert_eq!(&s[..5], &[0xF0, 0x44, 0x19, 0x03, 0x7F], "PX-S family header");
         assert_eq!(s[5], 0x01, "send marker");
-        assert_eq!([s[6], s[7]], enc7_2(MODEL_ID_PX_S1100), "model-id slot");
+        // model slot big-endian: 0x1F -> [0x00, 0x1F]
+        assert_eq!([s[6], s[7]], [0x00, 0x1F], "model-id slot (BE)");
         assert_eq!([s[0x12], s[0x13]], enc7_2(SUB_CMD_COMMAND));
         assert_eq!(s[29], 0xF7);
         let r = build_param_request(SUB_CMD_DATA, 0, MODEL_ID_PX_S1100);

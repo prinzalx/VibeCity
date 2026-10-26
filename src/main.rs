@@ -458,6 +458,26 @@ fn run_selftest(secs: u64) {
     let logpath = format!("logs\\diagnose-{ts}.log");
     let mut log = format!("VibeCity Selftest · Port '{name}' · Zeitstempel {ts}\n\n== PROBE ==\n");
 
+    // -1) Erste-Nachricht-Test: Beobachtung Läufe 1+4 — nur die ALLERERSTE
+    //     SysEx nach dem Öffnen wird beantwortet. Deshalb ist jetzt die
+    //     private C4-Session-Frage die allererste Nachricht. Piano dafür
+    //     vor dem Start aus- und wieder einschalten.
+    log.push_str("-1) ERSTE NACHRICHT = private C4-Session-Frage\n");
+    println!("Erste-Nachricht-Test: private C4-Frage als allererste SysEx …");
+    let first = build_param_request(SUB_APPX, 0, MODEL_TEMPLATE_DEFAULT);
+    log.push_str(&format!("  send: {}\n", hexdump(&first)));
+    let _ = t.send(&first);
+    match t.recv(1500) {
+        Some(frame) => {
+            log.push_str(&format!("  antwort: {}\n", hexdump(&frame)));
+            println!("  Antwort bekommen: {}", hexdump(&frame));
+        }
+        None => {
+            log.push_str("  antwort: keine\n");
+            println!("  keine Antwort");
+        }
+    }
+
     // 0) GM-Inquiry bis 3× — die erste Sendung nach dem Öffnen wird gern mal
     //    verschluckt (Beobachtung Lauf 1 vs. 2).
     log.push_str("0) GM-Inquiry, bis 3 Versuche\n");
