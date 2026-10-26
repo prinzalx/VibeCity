@@ -1001,9 +1001,21 @@ fn main() {
             }
         }
         "set" => {
+            // Neue Form (seit Read-All-Beweis 26.10.): set <IDhi> <IDlo> <wert>
+            // mit Hex-ID-Paaren aus logs/read-all-*.log — nutzt den 16B-Frame
+            // und liest zur Verifikation zurück.
+            if args.len() >= 4 {
+                let hi = u8::from_str_radix(&args[1], 16);
+                let lo = u8::from_str_radix(&args[2], 16);
+                let val = args[3].parse::<u16>();
+                if let (Ok(h), Ok(l), Ok(v)) = (hi, lo, val) {
+                    run_set(h, l, v);
+                    return;
+                }
+            }
             let unsafe_ok = args.iter().any(|a| a == "--unsafe-unverified");
             if args.len() < 3 {
-                eprintln!("usage: vibecity set <id> <wert> [--unsafe-unverified]");
+                eprintln!("usage: vibecity set <IDhi> <IDlo> <wert> | <id> <wert> [--unsafe-unverified]");
                 return;
             }
             match (parse_id(&args[1]), args[2].parse::<u32>()) {
@@ -1042,16 +1054,6 @@ fn main() {
         "sweep" => run_sweep(),
         "status-probe" => run_status_probe(),
         "read-all" => run_read_all(),
-        "set" => {
-            // set <IDhi> <IDlo> <wert-dezimal>  (Hex-IDs, wie im Log)
-            let hi = args.get(1).and_then(|s| u8::from_str_radix(s, 16).ok());
-            let lo = args.get(2).and_then(|s| u8::from_str_radix(s, 16).ok());
-            let val = args.get(3).and_then(|s| s.parse::<u16>().ok());
-            match (hi, lo, val) {
-                (Some(h), Some(l), Some(v)) => run_set(h, l, v),
-                _ => println!("usage: vibecity set <IDhi> <IDlo> <wert>  (IDs hex, Wert dezimal)"),
-            }
-        }
         "selftest" => {
             let secs = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(15);
             run_selftest(secs);
