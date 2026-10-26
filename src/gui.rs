@@ -36,6 +36,7 @@ struct Row {
     value: u16,
     edited: String,
     sv: f32,
+    last: u16,
 }
 
 enum Cmd {
@@ -158,7 +159,7 @@ impl Worker {
             if let Some(f) = answer {
                 let typ = if f.len() > 10 && f[10] == 0x02 { "Wert" } else { "Flag" };
                 let value = status_value(&f).unwrap_or(0);
-                rows.push((i, Row { id, typ: typ.to_string(), value, edited: value.to_string(), sv: value as f32 }));
+                rows.push((i, Row { id, typ: typ.to_string(), value, edited: value.to_string(), sv: value as f32, last: 0xFFFF }));
             }
             self.emit(Ev::Progress(i + 1));
         }
@@ -199,7 +200,7 @@ impl Worker {
                         let _ = self.ev_tx.send(Ev::Log(format!("OK {} = {v}", fmt_id(id))));
                         let _ = self.ev_tx.send(Ev::One(
                             IDS.iter().position(|x| *x == id).unwrap_or(usize::MAX),
-                            Row { id, typ: "Wert".into(), value: v, edited: v.to_string(), sv: v as f32 },
+                            Row { id, typ: "Wert".into(), value: v, edited: v.to_string(), sv: v as f32, last: 0xFFFF },
                         ));
                         ok = true;
                         break;
@@ -327,28 +328,65 @@ const META: &[(&str, usize)] = &[
 ];
 
 // Widget-Typ je ID (bewiesene Typen aus read-all; Bereiche konservativ, nachjustierbar).
+/// Casio Sign-Magnitude: 0x40-Bit = negativ.
+fn decode_signed(v: u16) -> f32 {
+    if v >= 0x40 && v <= 0x7F { -((v - 0x40) as f32) } else { v as f32 }
+}
+
 enum Spec { Check, Slider(f32, f32, &'static str), Choice(&'static [&'static str], u16) }
 const SPEC: &[Spec] = &[
-    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Check,
-    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
-    Spec::Choice(&["0", "1", "2", "3"], 0), Spec::Slider(0.0, 127.0, ""), Spec::Choice(&["0", "1", "2", "3"], 0),
-    Spec::Check, Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Choice(&["0", "1", "2", "3"], 0),
-    Spec::Check, Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
-    Spec::Slider(0.0, 127.0, ""), Spec::Slider(3000.0, 6000.0, " Hz(0,1)"), Spec::Choice(&["0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"], 0),
-    Spec::Choice(&["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"], 0),
-    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
-    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
-    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
-    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
-    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""),
-    Spec::Check, Spec::Check, Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 639.0, ""),
+    Spec::Slider(-2.0, 2.0, ""),
     Spec::Slider(0.0, 127.0, ""),
-    Spec::Choice(&["2","3","4","5","6","7","8","9","10","11","12"], 2), Spec::Slider(30.0, 200.0, " bpm"), Spec::Slider(0.0, 127.0, ""),
-    Spec::Choice(&["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"], 1), Spec::Check, Spec::Check,
-    Spec::Slider(0.0, 127.0, ""),
-    Spec::Check, Spec::Check,
-    Spec::Slider(0.0, 127.0, ""), Spec::Slider(0.0, 127.0, ""), Spec::Check,
     Spec::Check,
+    Spec::Slider(0.0, 639.0, ""),
+    Spec::Slider(-2.0, 2.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Choice(&["Aus", "Leicht", "Mittelleicht", "Normal", "Mittelstark", "Stark"], 0),
+    Spec::Slider(-99.0, 99.0, ""),
+    Spec::Check,
+    Spec::Check,
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(-99.0, 99.0, ""),
+    Spec::Check,
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(-2.0, 2.0, ""),
+    Spec::Slider(-2.0, 2.0, ""),
+    Spec::Slider(-12.0, 12.0, ""),
+    Spec::Slider(4155.0, 4659.0, " Hz(0,1)"),
+    Spec::Slider(0.0, 639.0, ""),
+    Spec::Choice(&["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"], 0),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(-3.0, 3.0, ""),
+    Spec::Check,
+    Spec::Check,
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Check,
+    Spec::Slider(0.0, 9.0, ""),
+    Spec::Slider(20.0, 255.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Choice(&["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"], 1),
+    Spec::Check,
+    Spec::Check,
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Check,
+    Spec::Check,
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Slider(0.0, 127.0, ""),
+    Spec::Check,
+    Spec::Slider(0.0, 2.0, ""),
     Spec::Slider(0.0, 127.0, ""),
 ];
 
@@ -484,10 +522,15 @@ impl eframe::App for Gui {
                                     }
                                 }
                                 Spec::Slider(lo, hi, suf) => {
+                                    if rw.value != rw.last {
+                                        rw.sv = if *lo < 0.0 { decode_signed(rw.value) } else { rw.value as f32 };
+                                        rw.last = rw.value;
+                                    }
                                     let txt = if *suf == " Hz(0,1)" { format!("{:.1} Hz", rw.sv / 10.0) } else { format!("{}", rw.sv as i32) };
                                     let resp = ui.add(egui::Slider::new(&mut rw.sv, *lo..=*hi).text(txt));
                                     if resp.drag_stopped() || resp.lost_focus() {
-                                        send = Some(rw.sv as u16);
+                                        let v = rw.sv as i32;
+                                        send = Some(if v < 0 { 0x40 + (-v as u16) } else { v as u16 });
                                     }
                                 }
                                 Spec::Choice(opts, shift) => {
