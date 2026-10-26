@@ -3,7 +3,7 @@
 Host-Tool für das **Casio PX-S1100** unter **Windows 10 x64** — Piano-Einstellungen
 lesen und schreiben über MIDI (USB oder **WU-BT10** BLE-MIDI-Dongle).
 
-Status: **Protokoll gelöst und am Gerät bewiesen (26.10.2026)** · CLI funktionsfähig · GUI im Bau
+Status: **Protokoll gelöst und am Gerät bewiesen (26.10.2026)** · CLI funktionsfähig · GUI im App-Stil (Remote Controller) in Feinabstimmung · Version **0.2.0**
 
 ## Was es tut
 
@@ -20,6 +20,7 @@ Exe aus den [Releases](../../releases) herunterladen (oder bauen, siehe unten):
 vibecity.exe list-ports
 vibecity.exe read-all
 vibecity.exe set 07 01 42
+vibecity-gui.exe        :: grafische Oberfläche; verbindet beim Start automatisch, wenn ein CASIO-Port da ist
 ```
 
 Ausgabe von `read-all` geht live in die Konsole und als Log + JSON nach `logs\`.
@@ -41,7 +42,7 @@ cargo build --release                                      # Windows-Ziel-PC
 cargo build --release --target x86_64-pc-windows-gnu --target-dir tgt-win   # Cross-Build aus WSL
 ```
 
-Binaries: `vibecity` (CLI) und `vibecity-gui` (Oberfläche, in Arbeit).
+Binaries: `vibecity` (CLI) und `vibecity-gui` (GUI im Stil des App-Remote-Controllers: Kategorie-Kacheln, Auto-Connect beim Start, Alle-lesen mit Fortschrittsbalken, Schreiben mit Rücklese).
 
 ## Verbindungswege
 
@@ -57,5 +58,6 @@ Binaries: `vibecity` (CLI) und `vibecity-gui` (Oberfläche, in Arbeit).
 
 ## Changelog
 
+- **26.10.2026 (v0.2.0)** — GUI im App-Stil (Kacheln, Kopfzeile, heller Look), Auto-Connect + Auto-Read beim Start mit Fortschrittsbalken, Verbindungsstatus als eigener Zustand behoben.
 - **26.10.2026** — Lese-/Schreibpfad am Gerät bewiesen (Read 53/53, Write+Rücklese OK); `read-all` mit JSON-Ausgabe; GUI-Grundlage (`vibecity-gui`) hinzugefügt.
 - **25.–26.10.2026** — Phase 3A: Core + CLI, BLE-Analyse, Wizard, Kanal-Findung (7E7E-Statuskanal).

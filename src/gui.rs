@@ -46,6 +46,8 @@ enum Cmd {
 enum Ev {
     Ports(Vec<String>),
     Status(String),
+    Connected(bool),
+    Progress(usize),
     Rows(Vec<(usize, Row)>),
     One(usize, Row),
     Log(String),
@@ -106,14 +108,18 @@ impl Worker {
                 }
                 self.emit(Ev::Status(format!("Verbunden: {name}")));
             }
-            Err(e) => self.emit(Ev::Status(format!("Fehler beim Verbinden: {e}"))),
+            Err(e) => {
+                self.emit(Ev::Status(format!("Fehler beim Verbinden: {e}")));
+                self.emit(Ev::Connected(false));
+            }
         }
         #[cfg(not(windows))]
         {
             self.transport = Some(Box::new(vibecity::transport::MockTransport::default()));
             self.port_name = name;
-            self.emit(Ev::Status("Verbunden (Mock)".into()));
         }
+        self.emit(Ev::Status(format!("Verbunden: {name}")));
+        self.emit(Ev::Connected(true));
     }
 
     fn emit(&self, ev: Ev) {
@@ -153,6 +159,7 @@ impl Worker {
                 let value = status_value(&f).unwrap_or(0);
                 rows.push((i, Row { id, typ: typ.to_string(), value, edited: value.to_string() }));
             }
+            self.emit(Ev::Progress(i + 1));
         }
         self.transport = Some(t);
         for e in errs { self.emit(Ev::Log(e)); }
@@ -217,6 +224,8 @@ struct Gui {
     cmd_tx: Sender<Cmd>,
     ev_rx: Receiver<Ev>,
     busy_read: bool,
+    connected: bool,
+    progress: usize,
 }
 
 impl Gui {
@@ -225,16 +234,25 @@ impl Gui {
         let (etx, erx) = channel();
         std::thread::spawn(move || Worker::run(crx, etx));
         let ports = Worker::list_ports();
+        let port_idx = ports.iter().position(|n| n.contains("CASIO")).unwrap_or(0);
+        // Auto-Connect: existiert beim Start ein CASIO-Port, sofort verbinden (und danach lesen).
+        if let Some(p) = ports.get(port_idx).cloned() {
+            if p.contains("CASIO") {
+                let _ = ctx.send(Cmd::Connect(p));
+            }
+        }
         Self {
             ports,
             cat: 0,
-            port_idx: 0,
+            port_idx,
             status: "Nicht verbunden.".into(),
             rows: vec![None; IDS.len()],
             log: Vec::new(),
             cmd_tx: ctx,
             ev_rx: erx,
             busy_read: false,
+            connected: false,
+            progress: 0,
         }
     }
 
@@ -243,6 +261,16 @@ impl Gui {
             match ev {
                 Ev::Ports(p) => self.port_idx = p.iter().position(|n| n.contains("CASIO")).unwrap_or(0),
                 Ev::Status(s) => self.status = s,
+                Ev::Connected(c) => {
+                    self.connected = c;
+                    if c {
+                        // Nach erfolgreichem Verbinden automatisch alles lesen.
+                        self.busy_read = true;
+                        self.progress = 0;
+                        let _ = self.cmd_tx.send(Cmd::ReadAll);
+                    }
+                }
+                Ev::Progress(n) => self.progress = n,
                 Ev::Rows(rs) => {
                     for (i, r) in rs {
                         if i < self.rows.len() {
@@ -283,6 +311,15 @@ impl eframe::App for Gui {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.drain_events();
         let accent = egui::Color32::from_rgb(247, 183, 51);
+        {
+            let v = ui.visuals_mut();
+            v.widgets.inactive.weak_bg_fill = egui::Color32::from_gray(228);
+            v.widgets.inactive.bg_fill = egui::Color32::from_gray(228);
+            v.widgets.hovered.weak_bg_fill = egui::Color32::from_gray(214);
+            v.widgets.hovered.bg_fill = egui::Color32::from_gray(214);
+            v.widgets.active.weak_bg_fill = egui::Color32::from_gray(200);
+            v.widgets.active.bg_fill = egui::Color32::from_gray(200);
+        }
 
         // Kopfzeile wie in der App: Titel links, Gerät rechts.
         egui::Panel::top("header").show(ui, |ui| {
@@ -291,9 +328,8 @@ impl eframe::App for Gui {
                 ui.separator();
                 ui.strong("PX-S1100");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let ok = self.status.starts_with("Verbunden");
-                    let dot = if ok { "●" } else { "○" };
-                    ui.colored_label(if ok { egui::Color32::from_rgb(40, 160, 80) } else { egui::Color32::GRAY }, format!("{dot} {}", self.status));
+                    let dot = if self.connected { "●" } else { "○" };
+                    ui.colored_label(if self.connected { egui::Color32::from_rgb(40, 160, 80) } else { egui::Color32::GRAY }, format!("{dot} {}", self.status));
                 });
             });
         });
@@ -316,13 +352,17 @@ impl eframe::App for Gui {
                         let _ = self.cmd_tx.send(Cmd::Connect(p));
                     }
                 }
-                let connected = self.status.starts_with("Verbunden");
-                ui.add_enabled_ui(connected && !self.busy_read, |ui| {
+                ui.add_enabled_ui(self.connected && !self.busy_read, |ui| {
                     if ui.button("Alle lesen").clicked() {
                         self.busy_read = true;
+                        self.progress = 0;
                         let _ = self.cmd_tx.send(Cmd::ReadAll);
                     }
                 });
+                if self.busy_read {
+                    let frac = self.progress as f32 / IDS.len() as f32;
+                    ui.add(egui::ProgressBar::new(frac).text(format!("Lese… {}/{}", self.progress, IDS.len())).animate(true));
+                }
             });
         });
 
@@ -332,7 +372,7 @@ impl eframe::App for Gui {
                 let tile = |ui: &mut egui::Ui, sel: &mut usize, idx: usize, text: &str, accent: egui::Color32| {
                     let active = *sel == idx;
                     let frame = egui::Frame::new()
-                        .fill(if active { accent.linear_multiply(0.25) } else { egui::Color32::from_gray(250) })
+                        .fill(if active { accent.linear_multiply(0.25) } else { egui::Color32::from_gray(235) })
                         .stroke(egui::Stroke::new(if active { 2.0 } else { 1.0 }, accent))
                         .corner_radius(8.0)
                         .inner_margin(egui::Margin::symmetric(14, 8));
