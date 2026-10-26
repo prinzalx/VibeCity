@@ -644,6 +644,74 @@ fn burst(msgs: &[&[u8]]) -> SweepMsg {
     msgs.iter().map(|m| m.to_vec()).collect()
 }
 
+/// Analyse-Lauf: sendet Status-Kanal-Varianten und ZÄHLT die Antworten.
+/// Ziel: herausfinden, welche Request-Form den Voll-Dump (~40 Rahmen) auslöst
+/// und ob die Antwort-ID dem Request folgt.
+fn run_status_probe() {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = std::fs::create_dir_all("logs");
+    let logpath = format!("logs\\status-{ts}.log");
+    let mut log = format!("VibeCity Status-Probe · Zeitstempel {ts}\n");
+    // 7-Bit-kodierte ID-Paare (hi<<7|lo): reale IDs aus dem App-Mitschnitt.
+    fn id7(hi: u8, lo: u8) -> (u8, u8) {
+        ((((hi as u16) << 7 | lo as u16) >> 7) as u8 & 0x7F, ((hi as u16) << 7 | lo as u16) as u8 & 0x7F)
+    }
+    let mut variants: Vec<(&str, Vec<u8>)> = Vec::new();
+    for (label, hi, lo) in [
+        ("25 00", 0x25u8, 0x00u8),
+        ("52 01", 0x52, 0x01),
+        ("20 0B", 0x20, 0x0B),
+        ("08 00", 0x08, 0x00),
+        ("58 00", 0x58, 0x00),
+        ("7F 00", 0x7F, 0x00),
+    ] {
+        let (a, b) = id7(hi, lo);
+        // Form A: byte6=00 (Request-Richtung aus RE: 0=request, 1=send)
+        variants.push((Box::leak(format!("A byte6=00 ID {label}").into_boxed_str()), vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x00, a, b, 0xF7]));
+        let (a2, b2) = id7(hi, lo);
+        // Form B: byte5=0E statt 0F
+        variants.push((Box::leak(format!("B byte5=0E ID {label}").into_boxed_str()), vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0E, 0x01, a2, b2, 0xF7]));
+    }
+    println!("Status-Probe: {} Varianten …", variants.len());
+    for (i, (label, msg)) in variants.iter().enumerate() {
+        let Some((mut t, _name)) = open_piano_port() else {
+            log.push_str(&format!("V{i} {label}: Port nicht gefunden — Abbruch\n"));
+            break;
+        };
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let _ = t.send(msg);
+        let mut frames: Vec<Vec<u8>> = Vec::new();
+        let start = std::time::Instant::now();
+        while start.elapsed().as_millis() < 3000 {
+            match t.recv(400) {
+                Some(f) => frames.push(f),
+                None => break,
+            }
+        }
+        // Antworten kurz zusammenfassen: ID-Feld-Roheindruck + Anzahl.
+        let line = format!(
+            "V{i} {label}: {} Antwort(en){}",
+            frames.len(),
+            if frames.is_empty() { " — keine".to_string() } else { String::new() }
+        );
+        log.push_str(&line);
+        log.push('\n');
+        for f in &frames {
+            let l2 = format!("   → {}", hexdump(f));
+            log.push_str(&l2);
+            log.push('\n');
+        }
+        println!("{line}");
+        drop(t);
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    let _ = std::fs::write(&logpath, &log);
+    println!("Log: {logpath}");
+}
+
 /// Dialekt-Sweep: jeder Kandidat bekommt einen FRISCHEN Port-Öffnungsvorgang,
 /// weil das Piano offenbar nur die allererste Nachricht nach dem Öffnen
 /// beantwortet (Beobachtung Läufe 1/4/5). Ein Lauf, alle Kandidaten, Schluss
@@ -850,6 +918,7 @@ fn main() {
         }
         "probe" => run_probe(),
         "sweep" => run_sweep(),
+        "status-probe" => run_status_probe(),
         "selftest" => {
             let secs = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(15);
             run_selftest(secs);
