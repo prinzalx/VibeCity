@@ -660,22 +660,20 @@ fn run_status_probe() {
         ((((hi as u16) << 7 | lo as u16) >> 7) as u8 & 0x7F, ((hi as u16) << 7 | lo as u16) as u8 & 0x7F)
     }
     let mut variants: Vec<(&str, Vec<Vec<u8>>)> = Vec::new();
-    // Hypothese 26.10. (Probe v3, REA-Beleg get_PianoControlGetData):
-    // Die App baut Requests als 11-Byte-Rahmen F0 44 7E 7E 7F 01 10 01 <IDhi> <IDlo> F7
-    // (Konstanten 0xf7f7e7e44f0 + 0xf7000000011001). 0F/01 ist der STATUS-Kanal
-    // (Piano->App), nicht der Request-Kanal. Doppel-Sendetest beweist 1:1.
-    let pc = |b5: u8, b6: u8, b7: u8, hi: u8, lo: u8| vec![0xF0u8, 0x44, 0x7E, 0x7E, 0x7F, b5, b6, b7, hi, lo, 0xF7];
-    variants.push(("R1 PianoControl GET 25 00", vec![pc(1, 0x10, 1, 0x25, 0x00)]));
-    variants.push(("R2 PianoControl GET 52 01", vec![pc(1, 0x10, 1, 0x52, 0x01)]));
-    variants.push(("R3 PianoControl GET 07 01", vec![pc(1, 0x10, 1, 0x07, 0x01)]));
-    variants.push(("R4 PianoControl GET 7F 7F", vec![pc(1, 0x10, 1, 0x7F, 0x7F)]));
-    variants.push(("R5 byte5=10 GET 25 00", vec![pc(0x10, 1, 0x25, 0x00, 0x00)]));
-    variants.push(("R6 byte5=01 byte6=01 GET 25 00", vec![pc(1, 1, 0x25, 0x00, 0x00)]));
-    variants.push((
-        "R7 Status-Form echo 17B",
-        vec![vec![0xF0u8, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, 0x25, 0x00, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7]],
-    ));
-    variants.push(("R8 Doppeltest R1 zweimal", vec![pc(1, 0x10, 1, 0x25, 0x00), pc(1, 0x10, 1, 0x25, 0x00)]));
+    // Hypothese 26.10. (Probe v4): Piano antwortet NUR auf volle Status-Form
+    // (0F 01 + Payload), 11B-Kurzform bleibt stumm (v3 Negativbeleg).
+    // L1 = reines Lauschen ohne Senden: zeigt, ob Piano ohne App überhaupt
+    // autonom sendet. L2/L3 = Status-Form mit/ohne Payload-Varianten,
+    // L4 = Status-Form mit Request-ID im ID-Feld.
+    let st = |hi: u8, lo: u8| {
+        vec![0xF0u8, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, hi, lo, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7]
+    };
+    variants.push(("L1 Baseline: lauschen, nichts senden", vec![]));
+    variants.push(("L2 Status-Form ID 00 00", vec![st(0x00, 0x00)]));
+    variants.push(("L3 Status-Form ID 7F 7F", vec![st(0x7F, 0x7F)]));
+    variants.push(("L4 Status-Form ID 25 00", vec![st(0x25, 0x00)]));
+    variants.push(("L5 Status-Kurz 0F 01 25 00 F7", vec![vec![0xF0u8, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, 0x25, 0x00, 0xF7]]));
+    variants.push(("L6 Doppeltest L3 zweimal", vec![st(0x7F, 0x7F), st(0x7F, 0x7F)]));
     println!("Status-Probe: {} Varianten …", variants.len());
     for (i, (label, msgs)) in variants.iter().enumerate() {
         let Some((mut t, _name)) = open_piano_port() else {
