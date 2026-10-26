@@ -226,6 +226,7 @@ struct Gui {
     busy_read: bool,
     connected: bool,
     progress: usize,
+    dark: bool,
 }
 
 impl Gui {
@@ -253,6 +254,7 @@ impl Gui {
             busy_read: false,
             connected: false,
             progress: 0,
+            dark: false,
         }
     }
 
@@ -313,12 +315,21 @@ impl eframe::App for Gui {
         let accent = egui::Color32::from_rgb(247, 183, 51);
         {
             let v = ui.visuals_mut();
-            v.widgets.inactive.weak_bg_fill = egui::Color32::from_gray(228);
-            v.widgets.inactive.bg_fill = egui::Color32::from_gray(228);
-            v.widgets.hovered.weak_bg_fill = egui::Color32::from_gray(214);
-            v.widgets.hovered.bg_fill = egui::Color32::from_gray(214);
-            v.widgets.active.weak_bg_fill = egui::Color32::from_gray(200);
-            v.widgets.active.bg_fill = egui::Color32::from_gray(200);
+            if self.dark {
+                v.widgets.inactive.weak_bg_fill = egui::Color32::from_gray(58);
+                v.widgets.inactive.bg_fill = egui::Color32::from_gray(58);
+                v.widgets.hovered.weak_bg_fill = egui::Color32::from_gray(74);
+                v.widgets.hovered.bg_fill = egui::Color32::from_gray(74);
+                v.widgets.active.weak_bg_fill = egui::Color32::from_gray(90);
+                v.widgets.active.bg_fill = egui::Color32::from_gray(90);
+            } else {
+                v.widgets.inactive.weak_bg_fill = egui::Color32::from_gray(228);
+                v.widgets.inactive.bg_fill = egui::Color32::from_gray(228);
+                v.widgets.hovered.weak_bg_fill = egui::Color32::from_gray(214);
+                v.widgets.hovered.bg_fill = egui::Color32::from_gray(214);
+                v.widgets.active.weak_bg_fill = egui::Color32::from_gray(200);
+                v.widgets.active.bg_fill = egui::Color32::from_gray(200);
+            }
         }
 
         // Kopfzeile wie in der App: Titel links, Gerät rechts.
@@ -328,6 +339,11 @@ impl eframe::App for Gui {
                 ui.separator();
                 ui.strong("PX-S1100");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let tlabel = if self.dark { "☾ Dunkel" } else { "☀ Hell" };
+                    if ui.toggle_value(&mut self.dark, tlabel).clicked() {
+                        let v = if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() };
+                        ui.ctx().set_visuals(v);
+                    }
                     let dot = if self.connected { "●" } else { "○" };
                     ui.colored_label(if self.connected { egui::Color32::from_rgb(40, 160, 80) } else { egui::Color32::GRAY }, format!("{dot} {}", self.status));
                 });
@@ -369,10 +385,11 @@ impl eframe::App for Gui {
         // Kategorie-Kacheln wie im App-Screenshot (2×4 + „Alle").
         egui::Panel::top("tiles").show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                let tile = |ui: &mut egui::Ui, sel: &mut usize, idx: usize, text: &str, accent: egui::Color32| {
+                let dark = self.dark;
+                let tile = |ui: &mut egui::Ui, dark: bool, sel: &mut usize, idx: usize, text: &str, accent: egui::Color32| {
                     let active = *sel == idx;
                     let frame = egui::Frame::new()
-                        .fill(if active { accent.linear_multiply(0.25) } else { egui::Color32::from_gray(235) })
+                        .fill(if active { accent.linear_multiply(0.25) } else if dark { egui::Color32::from_gray(52) } else { egui::Color32::from_gray(235) })
                         .stroke(egui::Stroke::new(if active { 2.0 } else { 1.0 }, accent))
                         .corner_radius(8.0)
                         .inner_margin(egui::Margin::symmetric(14, 8));
@@ -380,9 +397,9 @@ impl eframe::App for Gui {
                         *sel = idx;
                     }
                 };
-                tile(ui, &mut self.cat, 0, "Alle", accent);
+                tile(ui, dark, &mut self.cat, 0, "Alle", accent);
                 for (i, (name, _)) in CATS.iter().enumerate() {
-                    tile(ui, &mut self.cat, i + 1, name, accent);
+                    tile(ui, dark, &mut self.cat, i + 1, name, accent);
                 }
             });
         });
