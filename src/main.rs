@@ -659,34 +659,33 @@ fn run_status_probe() {
     fn id7(hi: u8, lo: u8) -> (u8, u8) {
         ((((hi as u16) << 7 | lo as u16) >> 7) as u8 & 0x7F, ((hi as u16) << 7 | lo as u16) as u8 & 0x7F)
     }
-    let mut variants: Vec<(&str, Vec<u8>)> = Vec::new();
-    for (label, hi, lo) in [
-        ("25 00", 0x25u8, 0x00u8),
-        ("52 01", 0x52, 0x01),
-        ("20 0B", 0x20, 0x0B),
-        ("08 00", 0x08, 0x00),
-        ("58 00", 0x58, 0x00),
-        ("7F 00", 0x7F, 0x00),
-    ] {
-        let (a, b) = id7(hi, lo);
-        // Form A: byte6=00 (Request-Richtung aus RE: 0=request, 1=send)
-        variants.push((Box::leak(format!("A byte6=00 ID {label}").into_boxed_str()), vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x00, a, b, 0xF7]));
-        let (a2, b2) = id7(hi, lo);
-        // Form B: byte5=0E statt 0F
-        variants.push((Box::leak(format!("B byte5=0E ID {label}").into_boxed_str()), vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0E, 0x01, a2, b2, 0xF7]));
-    }
+    let mut variants: Vec<(&str, Vec<Vec<u8>>)> = Vec::new();
+    // Hypothese 26.10. (Status-Probe Lauf 1): Form A (byte6=00) löst pro
+    // Request genau eine 7F-00-Samststatus-Antwort aus; ID im Request wurde
+    // ignoriert. Jetzt: Wildcard-ID 7F 7F als Voll-Dump-Auslöser suchen,
+    // byte6 variiert, plus Doppel-Sendetest (getriggert oder periodisch?).
+    let wa = |b6: u8, hi: u8, lo: u8| vec![0xF0u8, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, b6, hi, lo, 0xF7];
+    variants.push(("C byte6=01 ID 7F 7F (Wildcard)", vec![wa(1, 0x7F, 0x7F)]));
+    variants.push(("C byte6=02 ID 7F 7F (Wildcard)", vec![wa(2, 0x7F, 0x7F)]));
+    variants.push(("C byte6=03 ID 7F 7F (Wildcard)", vec![wa(3, 0x7F, 0x7F)]));
+    variants.push(("C byte6=00 ID 7F 7F (Wildcard)", vec![wa(0, 0x7F, 0x7F)]));
+    variants.push(("D Doppel-Sendetest ID 25 00", vec![wa(0, 0x25, 0x00), wa(0, 0x52, 0x01)]));
+    variants.push(("E 7F 7F dann 25 00", vec![wa(0, 0x7F, 0x7F), wa(0, 0x25, 0x00)]));
     println!("Status-Probe: {} Varianten …", variants.len());
-    for (i, (label, msg)) in variants.iter().enumerate() {
+    for (i, (label, msgs)) in variants.iter().enumerate() {
         let Some((mut t, _name)) = open_piano_port() else {
             log.push_str(&format!("V{i} {label}: Port nicht gefunden — Abbruch\n"));
             break;
         };
         std::thread::sleep(std::time::Duration::from_millis(500));
-        let _ = t.send(msg);
+        for m in &msgs {
+            let _ = t.send(m);
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
         let mut frames: Vec<Vec<u8>> = Vec::new();
         let start = std::time::Instant::now();
-        while start.elapsed().as_millis() < 3000 {
-            match t.recv(400) {
+        while start.elapsed().as_millis() < 4000 {
+            match t.recv(600) {
                 Some(f) => frames.push(f),
                 None => break,
             }
@@ -699,8 +698,8 @@ fn run_status_probe() {
         );
         log.push_str(&line);
         log.push('\n');
-        for f in &frames {
-            let l2 = format!("   → {}", hexdump(f));
+        for (k, f) in frames.iter().enumerate() {
+            let l2 = format!("   +{k} {}", hexdump(f));
             log.push_str(&l2);
             log.push('\n');
         }
