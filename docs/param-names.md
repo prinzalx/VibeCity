@@ -1,0 +1,67 @@
+# Parameter-IDs → Klartextnamen (rein statisch ermittelt, 26.10.2026)
+
+Quelle: `csUnityOperator`-Tabelle in `libsssg.so` (0x2cc042, 232 Zeilen à 20 B;
+Erstes Short = Tabellenzeile = C#-Enum `DataManager.PIANO_CONTROLLER_DATA_TYPE`,
+Bytes +12/+14 = Wire-ID hi/lo) + Enum-Namen aus `dump.cs`.
+
+Bewiesene Anker: `07 01` = Lautstärke (set/rücklese 42), `60 00` = Stimmung
+(Rohwert 4400 = 440,0 Hz — passt exakt).
+
+| ID | Name | Zeile(n) |
+|---|---|---|
+| `10 10` | UPPER1_TONE_NUMBER | rows 0 |
+| `04 10` | UPPER1_OCTAVE_SHIFT | rows 1 |
+| `07 01` | UPPER1_VOLUME | rows 2 |
+| `00 00` | INSTANT_REPLAYER_PLAY_MODE/LAYER/MIDI_RECORDER_COPY_DESTINATION/MIDI_RECORDER_COPY_OVERWRITTEN/MIDI_RECORDER_COPY_SOURCE/MIDI_RECORDER_SONG_NUMBER/MUSIC_LIBRARY_SONG_TYPE/PEDAL_SCORETURN_DAMPERLONG/PEDAL_SCORETURN_DAMPERSHORT/PEDAL_SCORETURN_SOFT/PEDAL_SCORETURN_SOSUTENUTO/SCENE_CATEGORY/SCENE_SAVE_AREA/SCENE_USER_SCENE_INDEX/TONE_MEMORY_STORE_AREA/TONE_MENU_CATEGORY/UNITY_FOR_GET_EMI_MODE_DEMO  [MEHRDEUTIG] | rows 8,103,104,105,106,126,127,128,129,130,134,201,205,207,213,221,230 |
+| `10 11` | UPPER2_TONE_NUMBER | rows 9 |
+| `04 11` | UPPER2_OCTAVE_SHIFT | rows 10 |
+| `00 04` | UPPER2_VOLUME | rows 11 |
+| `02 00` | TOUCH_RESPONSE | rows 33 |
+| `00 02` | UPPER2_DETUNE | rows 12 |
+| `00 03` | UPPER2_DAMPER_PEDAL | rows 13 |
+| `01 00` | SPLIT | rows 17 |
+| `01 05` | LOWER_VOLUME | rows 20 |
+| `01 03` | LOWER_DETUNE | rows 21 |
+| `01 04` | LOWER_DAMPER_PEDAL | rows 22 |
+| `06 02` | DUET | rows 26 |
+| `06 10` | DUET_OCTAVE_SHIFT_UPPER | rows 27 |
+| `06 11` | DUET_OCTAVE_SHIFT_LOWER | rows 28 |
+| `03 00` | TRANSPOSE | rows 29 |
+| `60 00` | TUNING | rows 30 |
+| `61 00` | SCALE_TYPE | rows 31 |
+| `61 01` | SCALE_BASE_NOTE | rows 32 |
+| `50 02` | STRING_RESONANCE | rows 34 |
+| `50 03` | DAMPER_RESONANCE | rows 35 |
+| `50 04` | DAMPER_NOISE | rows 36 |
+| `50 08` | KEY_ON_ACTION_NOISE | rows 37 |
+| `50 09` | KEY_OFF_ACTION_NOISE | rows 38 |
+| `52 00` | REVERB_TYPE | rows 39 |
+| `52 01` | REVERB_DEPTH | rows 40 |
+| `53 00` | CHORUS | rows 41 |
+| `5A 00` | SOUND_MODE | rows 42 |
+| `51 00` | HALL_SIMULATOR_TYPE | rows 43 |
+| `51 01` | HALL_SIMULATOR_DEPTH | rows 44 |
+| `52 02` | AUDIOIN_HALL_DEPTH | rows 45 |
+| `58 01` | SURROUND_TYPE | rows 46 |
+| `55 00` | BRILLIANCE | rows 47 |
+| `3A 00` | DEMO_PLAYSTOP | rows 48 |
+| `20 04` | SONG_PLAYSTOP | rows 50 |
+| `20 03` | SONG_VOLUME | rows 53 |
+| `25 14` | MIDI_RECORDER_MUTE_TRACK/MIDI_RECORDER_MUTE_TRACK_RIGHT  [MEHRDEUTIG] | rows 63,131 |
+| `0B 01` | METRONOME_BEAT | rows 82 |
+| `0A 00` | METRONOME_TEMPO | rows 83 |
+| `0B 03` | METRONOME_VOLUME | rows 84 |
+| `6C 00` | MIDI_CHANNEL | rows 92 |
+| `6C 01` | MIDI_LOCAL_CONTROL | rows 93 |
+| `6C 03` | MIDI_HIGHRESO_VELOCITY_MIDIOUT | rows 95 |
+| `48 00` | PEDAL_DAMPER_FUNCTION/PEDAL_EXP_ASGN_FUNCTION  [MEHRDEUTIG] | rows 100,102 |
+| `52 03` | SOUND_MODE_HALL_REVERB | rows 121 |
+| `58 00` | SOUND_MODE_SURROUND | rows 122 |
+| `01 01` | SPLIT_POINT | rows 125 |
+| `05 00` | KEYBOARD_VOLUME | rows 138 |
+| `62 00` | STRETCH_TUNING | rows 139 |
+| `78 00` | SPEAKER_OUT | rows 140 |
+
+CHANGELOG
+---------
+26.10.2026: erstellt (REA/UnityPy statisch, kein Gerätelauf).

@@ -297,16 +297,32 @@ impl Gui {
     }
 }
 
-/// Kategorien wie im Remote-Controller-Menü der App (Zuordnung nach byte1-Cluster, vorläufig).
-const CATS: &[(&str, &[u8])] = &[
-    ("Tone", &[0x01, 0x60, 0x61, 0x62]),
-    ("Keyboard", &[0x07, 0x20, 0x05, 0x10]),
-    ("Pedal & others", &[0x02, 0x03, 0x06, 0x5A]),
-    ("Acoustic Simulator", &[0x0A, 0x0B, 0x00]),
-    ("Effect", &[0x50, 0x51, 0x52, 0x53, 0x55, 0x58]),
-    ("Built-in Songs", &[0x6C, 0x3A]),
-    ("MIDI Recorder", &[0x78]),
-    ("Metronome", &[0x25, 0x48]),
+
+// Names + Kategorien: statisch ermittelt aus libsssg.so csUnityOperator (Zeile=Enum, +12/+14=Wire-ID),
+// C#-Enum DataManager.PIANO_CONTROLLER_DATA_TYPE (dump.cs). Bewiesene Anker: 07 01=Volume(42), 60 00=Tuning(440,0 Hz).
+const CATS: &[&str] = &["Tone", "Keyboard", "Acoustic Simulator", "Effect", "Songs", "Metronom", "MIDI", "Recorder", "Pedal & Sonstiges"];
+// (Anzeigename, Kategorie-Index in CATS) je ID — Reihenfolge wie IDS.
+const META: &[(&str, usize)] = &[
+    ("Klang (Tonnummer)", 1), ("Oktavverschiebung", 1), ("Lautstärke", 1), ("Layer", 1),
+    ("2. Klang (Tonnummer)", 1), ("2. Klang Oktav", 1), ("2. Klang Lautstärke", 1),
+    ("Touch Response", 2), ("2. Klang Detune", 1), ("2. Klang Dämpferpedal", 1),
+    ("Split", 1), ("Lower Lautstärke", 1), ("Lower Detune", 1), ("Lower Dämpfer", 1),
+    ("Duett", 1), ("Duett Oktav oben", 1), ("Duett Oktav unten", 1),
+    ("Transponierung", 1), ("Stimmung (0,1 Hz)", 1), ("Skala-Typ", 1), ("Grundton", 1),
+    ("Saitenresonanz", 3), ("Dämpferresonanz", 3), ("Dämpfergeräusch", 3),
+    ("Anschlag-Tastengeräusch", 3), ("Loslass-Tastengeräusch", 3),
+    ("Hall-Typ", 4), ("Hall-Tiefe", 4), ("Chorus", 4), ("Klangmodus", 4),
+    ("Saalsimulator-Typ", 4), ("Saalsimulator-Tiefe", 4), ("Audio-Eingangshall-Tiefe", 4),
+    ("Surround-Typ", 4), ("Brilliance", 4),
+    ("Demo Play/Stop", 5), ("Song Play/Stop", 5), ("Song-Lautstärke", 5),
+    ("Recorder Stummschaltspur", 8),
+    ("Metronom Schlag", 6), ("Metronom Tempo", 6), ("Metronom Lautstärke", 6),
+    ("MIDI-Kanal", 7), ("MIDI Lokal-Kontrolle", 7), ("MIDI High-Res Velocity", 7),
+    ("Pedal-Funktion", 9),
+    ("Klangmodus Hall", 4), ("Klangmodus Surround", 4),
+    ("Split-Punkt", 1), ("Keyboard-Lautstärke", 1), ("Stretch-Stimmung", 1),
+    ("Speaker Out", 9),
+    ("Status (Master)", 9),
 ];
 
 impl eframe::App for Gui {
@@ -398,7 +414,7 @@ impl eframe::App for Gui {
                     }
                 };
                 tile(ui, dark, &mut self.cat, 0, "Alle", accent);
-                for (i, (name, _)) in CATS.iter().enumerate() {
+                for (i, name) in CATS.iter().enumerate() {
                     tile(ui, dark, &mut self.cat, i + 1, name, accent);
                 }
             });
@@ -415,7 +431,8 @@ impl eframe::App for Gui {
 
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                egui::Grid::new("params").num_columns(5).spacing([10.0, 4.0]).show(ui, |ui| {
+                egui::Grid::new("params").num_columns(6).spacing([10.0, 4.0]).show(ui, |ui| {
+                    ui.label(egui::RichText::new("Parameter").strong());
                     ui.label(egui::RichText::new("ID").strong());
                     ui.label(egui::RichText::new("Typ").strong());
                     ui.label(egui::RichText::new("Wert").strong());
@@ -423,12 +440,10 @@ impl eframe::App for Gui {
                     ui.label("");
                     for (i, meta) in IDS.iter().enumerate() {
                         // Filter: Kategorie 0 = alle.
-                        if self.cat > 0 {
-                            let (_, groups) = CATS[self.cat - 1];
-                            if !groups.contains(&meta[0]) {
-                                continue;
-                            }
+                        if self.cat > 0 && META[i].1 != self.cat {
+                            continue;
                         }
+                        ui.label(META[i].0);
                         ui.label(fmt_id(*meta));
                         match &mut self.rows[i] {
                             Some(r) => {
