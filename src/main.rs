@@ -74,6 +74,99 @@ fn read_line(prompt: &str) -> String {
     line.trim().to_string()
 }
 
+fn hexdump(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02X}")).collect::<Vec<_>>().join(" ")
+}
+
+/// Open the first piano-like MIDI port (Windows) or the mock (dev demo).
+#[allow(unused_variables)]
+fn open_piano_port() -> Option<(Box<dyn Transport>, String)> {
+    #[cfg(windows)]
+    {
+        let ports = vibecity::transport::winmm::list_ports().ok()?;
+        let name = ports
+            .iter()
+            .find(|p| looks_piano(&p.name))
+            .or_else(|| ports.first())
+            .map(|p| p.name.clone())?;
+        match vibecity::transport::winmm::WinMidiTransport::open(&name) {
+            Ok(w) => Some((Box::new(w), name)),
+            Err(e) => {
+                eprintln!("Öffnen von '{name}' fehlgeschlagen: {e}");
+                None
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        println!("(Nicht-Windows-Build: Mock-Gerät)");
+        Some((Box::new(MockTransport::default()), "mock".into()))
+    }
+}
+
+/// Send standard questions one after another and print the raw answers.
+/// Purpose: find out which dialect the real piano actually speaks.
+fn run_probe() {
+    let Some((mut t, name)) = open_piano_port() else {
+        eprintln!("Kein MIDI-Port gefunden.");
+        return;
+    };
+    println!("Probe über Port '{name}' — Piano bitte eingeschaltet lassen.\n");
+    let queries: Vec<(&str, Vec<u8>)> = vec![
+        ("1) General-MIDI-Inquiry  F0 7E 7F 06 01 F7", vec![0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]),
+        ("2) Casio privat param-get id0 (30 Byte)", build_param_msg(SUB_CMD_COMMAND, 0, 0, 2)),
+        ("3) Casio privat param-get id0, Geräte-ID 0 statt 7F", {
+            let mut m = build_param_msg(SUB_CMD_COMMAND, 0, 0, 2);
+            m[4] = 0x00;
+            m
+        }),
+        ("4) MUI5-Altanfrage  F0 43 19 C4 F7", vec![0xF0, 0x43, 0x19, 0xC4, 0xF7]),
+    ];
+    for (label, msg) in queries {
+        println!("{label}");
+        println!("   send: {}", hexdump(&msg));
+        if let Err(e) = t.send(&msg) {
+            println!("   Sendefehler: {e}");
+            continue;
+        }
+        let mut answers = Vec::new();
+        while let Some(frame) = t.recv(1200) {
+            let kind = if frame.first() == Some(&0xF0) { "SysEx" } else { "Kurz" };
+            println!("   antwort({kind}): {}", hexdump(&frame));
+            answers.push(frame);
+            if answers.len() >= 4 {
+                break;
+            }
+        }
+        if answers.is_empty() {
+            println!("   antwort: keine (Timeout 1.2 s)");
+        }
+        println!();
+    }
+    println!("Probe fertig — Ausgabe zurück an Hermes.");
+}
+
+/// Passively observe the port for N seconds and print everything that arrives.
+/// Use it while turning knobs / changing sounds on the piano.
+fn run_monitor(secs: u64) {
+    let Some((mut t, name)) = open_piano_port() else {
+        eprintln!("Kein MIDI-Port gefunden.");
+        return;
+    };
+    println!("Monitor auf '{name}' — {secs} s lang, nichts senden. Jetzt am Piano etwas ändern …");
+    let start = std::time::Instant::now();
+    let mut count = 0usize;
+    while start.elapsed().as_secs() < secs {
+        if let Some(frame) = t.recv(500) {
+            count += 1;
+            let t_ms = start.elapsed().as_millis();
+            let kind = if frame.first() == Some(&0xF0) { "SysEx" } else { "Kurz" };
+            println!("[{t_ms:>6} ms] {kind}: {}", hexdump(&frame));
+        }
+    }
+    println!("Monitor fertig: {count} Nachricht(en) gesehen.");
+}
+
 #[allow(dead_code)]
 /// Does this port name plausibly belong to the piano (not a synth/HW mapper)?
 fn looks_piano(name: &str) -> bool {
@@ -381,11 +474,15 @@ fn main() {
             }
             println!("}}");
         }
-        "monitor" => println!("monitor: (mock — nothing to observe without a live port)"),
+        "monitor" => {
+            let secs = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(15);
+            run_monitor(secs);
+        }
+        "probe" => run_probe(),
         "panic" => println!("panic sent: All Sound Off / All Notes Off (CC120/CC123)"),
         "wizard" => run_wizard(),
         _ => println!(
-            "usage: vibecity <list-ports|identify|get <id>|--all|set <id> <wert> [--unsafe-unverified]|dump|monitor|panic|wizard>"
+            "usage: vibecity <list-ports|identify|get <id>|--all|set <id> <wert> [--unsafe-unverified]|dump|probe|monitor [sekunden]|panic|wizard>"
         ),
     }
 }
