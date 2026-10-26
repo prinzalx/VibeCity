@@ -121,16 +121,17 @@ impl Worker {
     }
 
     fn read_all(&mut self) {
-        let Some(t) = self.transport.as_mut() else {
-            self.emit(Ev::Status("Bitte zuerst verbinden.".into()));
-            return;
+        let mut t = match self.transport.take() {
+            Some(t) => t,
+            None => { self.emit(Ev::Status("Bitte zuerst verbinden.".into())); return; }
         };
         self.emit(Ev::Status("Lesen läuft …".into()));
         let mut rows: Vec<(usize, Row)> = Vec::new();
+        let mut errs: Vec<String> = Vec::new();
         for (i, &id) in IDS.iter().enumerate() {
             let frame: Vec<u8> = vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x00, id[0], id[1], 0x00, 0xF7];
             if t.send(&frame).is_err() {
-                self.emit(Ev::Log(format!("Send-Fehler bei {}", fmt_id(id))));
+                errs.push(format!("Send-Fehler bei {}", fmt_id(id)));
                 continue;
             }
             std::thread::sleep(std::time::Duration::from_millis(90));
@@ -153,20 +154,23 @@ impl Worker {
                 rows.push((i, Row { id, typ: typ.to_string(), value, edited: value.to_string() }));
             }
         }
+        self.transport = Some(t);
+        for e in errs { self.emit(Ev::Log(e)); }
         self.emit(Ev::Rows(rows));
         self.emit(Ev::Status("Lesen fertig.".into()));
     }
 
     fn write_one(&mut self, id: [u8; 2], value: u16) {
-        let Some(t) = self.transport.as_mut() else {
-            self.emit(Ev::Status("Bitte zuerst verbinden.".into()));
-            return;
+        let mut t = match self.transport.take() {
+            Some(t) => t,
+            None => { self.emit(Ev::Status("Bitte zuerst verbinden.".into())); return; }
         };
         let frame: Vec<u8> = vec![
             0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, id[0], id[1],
             0x01, 0x00, 0x01, 0x00, (value & 0x7F) as u8, ((value >> 7) & 0x7F) as u8, 0xF7,
         ];
         if let Err(e) = t.send(&frame) {
+            self.transport = Some(t);
             self.emit(Ev::Log(format!("Schreibfehler {}: {e}", fmt_id(id))));
             return;
         }
@@ -177,6 +181,8 @@ impl Worker {
         let _ = t.send(&rf);
         std::thread::sleep(std::time::Duration::from_millis(150));
         let mut ok = false;
+        self.transport = Some(t);
+        let mut t = self.transport.as_mut().unwrap();
         let start = std::time::Instant::now();
         while start.elapsed().as_millis() < 900 {
             if let Some(f) = t.recv(100) {
@@ -260,12 +266,11 @@ impl Gui {
 }
 
 impl eframe::App for Gui {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.drain_events();
-        egui::TopBottomPanel::top("header").show(ctx, |ui| {
+        egui::Panel::top("header").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Port:");
-                egui::ComboBox::from_id_source("port_cb")
+                egui::ComboBox::new("port_cb", "Port")
                     .selected_text(self.ports.get(self.port_idx).cloned().unwrap_or_else(|| "—".into()))
                     .show_ui(ui, |ui| {
                         for (i, p) in self.ports.clone().iter().enumerate() {
@@ -292,7 +297,7 @@ impl eframe::App for Gui {
                 ui.label(&self.status);
             });
         });
-        egui::TopBottomPanel::bottom("log").resizable(true).default_height(90.0).show(ctx, |ui| {
+        egui::Panel::bottom("log").resizable(true).default_size(90.0).show(ui, |ui| {
             ui.heading("Protokoll");
             egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
                 for l in &self.log {
@@ -300,12 +305,12 @@ impl eframe::App for Gui {
                 }
             });
         });
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 egui::Grid::new("params").num_columns(5).spacing([10.0, 4.0]).show(ui, |ui| {
-                    ui.label(egui::RichText::bold("ID"));
-                    ui.label(egui::RichText::bold("Typ"));
-                    ui.label(egui::RichText::bold("Wert"));
+                    ui.label(egui::RichText::new("ID").strong());
+                    ui.label(egui::RichText::new("Typ").strong());
+                    ui.label(egui::RichText::new("Wert").strong());
                     ui.label("");
                     ui.label("");
                     for (i, meta) in IDS.iter().enumerate() {
@@ -343,11 +348,8 @@ impl eframe::App for Gui {
                 });
             });
         });
-        if self.busy_read {
-            ctx.request_repaint_after(std::time::Duration::from_millis(200));
-        } else {
-            ctx.request_repaint_after(std::time::Duration::from_millis(80));
-        }
+        let delay = if self.busy_read { 200 } else { 80 };
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(delay));
     }
 }
 
