@@ -620,6 +620,66 @@ fn run_selftest(secs: u64) {
     }
 }
 
+/// Dialekt-Sweep: jeder Kandidat bekommt einen FRISCHEN Port-Öffnungsvorgang,
+/// weil das Piano offenbar nur die allererste Nachricht nach dem Öffnen
+/// beantwortet (Beobachtung Läufe 1/4/5). Ein Lauf, alle Kandidaten, Schluss
+/// mit Einzelschuss-Zyklen.
+fn run_sweep() {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = std::fs::create_dir_all("logs");
+    let logpath = format!("logs\\sweep-{ts}.log");
+    let mut log = format!("VibeCity Dialekt-Sweep · Zeitstempel {ts}\n");
+
+    let mut old_header = build_param_request(SUB_APPX, 0, MODEL_TEMPLATE_DEFAULT);
+    old_header[2] = 0x17;
+    old_header[3] = 0x04;
+
+    let mut pair = build_param_send(SUB_CMD_COMMAND, 0, 0, MODEL_TEMPLATE_DEFAULT);
+    pair.extend_from_slice(&build_param_request(SUB_CMD_DATA, 0, MODEL_TEMPLATE_DEFAULT));
+
+    let candidates: Vec<(&str, Vec<u8>)> = vec![
+        ("GM-Inquiry (Kontrolle)", vec![0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]),
+        ("C4 Session-Frage (Header 19 03)", build_param_request(SUB_APPX, 0, MODEL_TEMPLATE_DEFAULT)),
+        ("C4 Session-Frage (Header 17 04)", old_header),
+        ("D0 Lesebitte (19 03)", build_param_request(SUB_CMD_DATA, 0, MODEL_TEMPLATE_DEFAULT)),
+        ("B8 Session-Enable (19 03)", build_param_request(SUB_SESSION_ENABLE, 0, MODEL_TEMPLATE_DEFAULT)),
+        ("CF Sende-Rahmen 30B (19 03)", build_param_send(SUB_CMD_COMMAND, 0, 0, MODEL_TEMPLATE_DEFAULT)),
+        ("CF+D0 Paar (19 03)", pair),
+        ("MUI5-Alt F0 43 19 0C 00 F7", vec![0xF0, 0x43, 0x19, 0x0C, 0x00, 0xF7]),
+        ("GM System On F0 7E 7F 09 01 F7", vec![0xF0, 0x7E, 0x7F, 0x09, 0x01, 0xF7]),
+    ];
+
+    println!("Sweep: {} Kandidaten, je mit frischer Port-Öffnung …", candidates.len());
+    for (i, (label, msg)) in candidates.iter().enumerate() {
+        // frischer Port für jeden Kandidaten
+        let Some((mut t, name)) = open_piano_port() else {
+            log.push_str(&format!("K{i} {label}: Port nicht gefunden — Abbruch\n"));
+            break;
+        };
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let _ = t.send(msg);
+        let reply = t.recv(1500);
+        drop(t); // Port zu, nächster Kandidat
+        log.push_str(&format!("K{i} {label} @ {name}\n  send: {}\n", hexdump(msg)));
+        match &reply {
+            Some(frame) => log.push_str(&format!("  ANTWORT: {} (sub={:02X})\n", hexdump(frame), sub_of(frame).unwrap_or(0))),
+            None => log.push_str("  antwort: keine\n"),
+        }
+        println!(
+            "K{i} {label}: {}",
+            match &reply { Some(f) => format!("ANTWORT {}", hexdump(f)), None => "keine".into() }
+        );
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+
+    std::fs::write(&logpath, &log).ok();
+    println!("\nLog: {logpath}");
+}
+
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = args.first().map(String::as_str).unwrap_or("help");
@@ -699,6 +759,7 @@ fn main() {
             run_monitor(secs);
         }
         "probe" => run_probe(),
+        "sweep" => run_sweep(),
         "selftest" => {
             let secs = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(15);
             run_selftest(secs);
