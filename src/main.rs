@@ -193,18 +193,35 @@ fn run_monitor(secs: u64) {
         eprintln!("Kein MIDI-Port gefunden.");
         return;
     };
-    println!("Monitor auf '{name}' — {secs} s lang, nichts senden. Jetzt am Piano etwas ändern …");
+    let secs_txt = if secs == 0 { "unbegrenzt (Strg+C zum Beenden)".into() } else { format!("{secs} s") };
+    println!("Monitor auf '{name}' — {secs_txt}, nichts senden. Jetzt am Piano etwas ändern …");
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = std::fs::create_dir_all("logs");
+    let logpath = format!("logs\\monitor-{ts}.log");
+    let mut log = format!("VibeCity Monitor · Port '{name}' · {secs_txt} · Zeitstempel {ts}\n");
     let start = std::time::Instant::now();
     let mut count = 0usize;
-    while start.elapsed().as_secs() < secs {
+    while secs == 0 || start.elapsed().as_secs() < secs {
         if let Some(frame) = t.recv(500) {
             count += 1;
             let t_ms = start.elapsed().as_millis();
             let kind = if frame.first() == Some(&0xF0) { "SysEx" } else { "Kurz" };
-            println!("[{t_ms:>6} ms] {kind}: {}", hexdump(&frame));
+            let line = format!("[{t_ms:>6} ms] {kind}: {}", hexdump(&frame));
+            println!("{line}");
+            log.push_str(&line);
+            log.push('\n');
+            // Sofort auf Disk, damit Strg+C oder Crash nichts kostet.
+            let _ = std::fs::write(&logpath, &log);
         }
     }
-    println!("Monitor fertig: {count} Nachricht(en) gesehen.");
+    let done = format!("Monitor fertig: {count} Nachricht(en) gesehen. Log: {logpath}");
+    println!("{done}");
+    log.push_str(&done);
+    log.push('\n');
+    let _ = std::fs::write(&logpath, &log);
 }
 
 #[allow(dead_code)]
@@ -800,7 +817,8 @@ fn main() {
             println!("}}");
         }
         "monitor" => {
-            let secs = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(15);
+            // Default 300 s; Argument 0 = unbegrenzt bis Strg+C.
+            let secs = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
             run_monitor(secs);
         }
         "probe" => run_probe(),
