@@ -3,7 +3,7 @@
 Host-Tool für das **Casio PX-S1100** unter **Windows 10 x64** — Piano-Einstellungen
 lesen und schreiben über MIDI (USB oder **WU-BT10** BLE-MIDI-Dongle).
 
-Status: **Protokoll gelöst und am Gerät bewiesen (26.10.2026)** · CLI funktionsfähig · GUI im App-Stil (Remote Controller) in Feinabstimmung · Version **0.2.0**
+Status: **Protokoll gelöst und am Gerät bewiesen (26.10.2026)** · CLI funktionsfähig · GUI im App-Stil (Remote Controller) mit echten Parameternamen, Slidern, Checkboxen & Dropdowns · Version **0.3.0**
 
 ## Was es tut
 
@@ -57,6 +57,8 @@ Binaries: `vibecity` (CLI) und `vibecity-gui` (GUI im Stil des App-Remote-Contro
 - `docs/HARDWARE_TESTS.md` — Test-Gates R0–R6 am realen Gerät
 
 ## Changelog
+
+- **26.10.2026 (v0.3.0)** — Alle 52 Parameter-IDs nachtennt (statisch via `csUnityOperator`, ohne Gerät); Bereiche/Defaults aus der App-Tabelle (`docs/param-table.md`); GUI mit Slidern/Checkboxen/Dropdowns statt Eingabefeldern; Dark-Mode-Schalter.
 
 - **26.10.2026 (v0.2.0)** — GUI im App-Stil (Kacheln, Kopfzeile, heller Look), Auto-Connect + Auto-Read beim Start mit Fortschrittsbalken, Verbindungsstatus als eigener Zustand behoben.
 - **26.10.2026** — Lese-/Schreibpfad am Gerät bewiesen (Read 53/53, Write+Rücklese OK); `read-all` mit JSON-Ausgabe; GUI-Grundlage (`vibecity-gui`) hinzugefügt.
