@@ -677,24 +677,32 @@ fn run_sweep() {
     pair.extend_from_slice(&d0.clone());
 
     let candidates: Vec<(&str, SweepMsg)> = vec![
-        // NEU 26.10. Klavier-Mitschnitt: Piano sendet Status über Familie
-        // F0 44 7E 7E 7F 0F 01 <IDhi IDlo> … (57 IDs = PARAM_COUNT).
-        // Requests probieren wir im Piano-eigenen Kanal (byte6 variiert 01/02/03).
+        // NEU 26.10. (Lauf 2): Der 7E7E/0F-Kanal antwortet! Alle variierten
+        // Requests bekamen denselben `7F 00`-Status zurück. Test jetzt mit
+        // REALEN IDs aus dem App-Mitschnitt: folgt die Antwort-ID dem Request?
         (
-            "KANAL 7E7E Read 01 52 00",
-            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, 0x52, 0x00, 0xF7]],
+            "KANAL 7E7E ID 7F 00 (Kontrolle)",
+            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, 0x7F, 0x00, 0xF7]],
         ),
         (
-            "KANAL 7E7E Read 02 52 00",
-            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x02, 0x52, 0x00, 0xF7]],
+            "KANAL 7E7E ID 08 00",
+            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, 0x08, 0x00, 0xF7]],
         ),
         (
-            "KANAL 7E7E Read 03 52 00",
-            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x03, 0x52, 0x00, 0xF7]],
+            "KANAL 7E7E ID 25 00",
+            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, 0x25, 0x00, 0xF7]],
         ),
         (
-            "KANAL 7E7E Read 02 00 00",
-            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x02, 0x00, 0x00, 0xF7]],
+            "KANAL 7E7E ID 52 01",
+            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, 0x52, 0x01, 0xF7]],
+        ),
+        (
+            "KANAL 7E7E ID 20 0B",
+            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, 0x20, 0x0B, 0xF7]],
+        ),
+        (
+            "KANAL 7E7E ID 58 00",
+            vec![vec![0xF0, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, 0x58, 0x00, 0xF7]],
         ),
         (
             "SESSION-PREP NEU (Start+B8+CF+D0)",
