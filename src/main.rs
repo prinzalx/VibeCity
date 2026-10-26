@@ -660,20 +660,18 @@ fn run_status_probe() {
         ((((hi as u16) << 7 | lo as u16) >> 7) as u8 & 0x7F, ((hi as u16) << 7 | lo as u16) as u8 & 0x7F)
     }
     let mut variants: Vec<(&str, Vec<Vec<u8>>)> = Vec::new();
-    // Hypothese 26.10. (Probe v4): Piano antwortet NUR auf volle Status-Form
-    // (0F 01 + Payload), 11B-Kurzform bleibt stumm (v3 Negativbeleg).
-    // L1 = reines Lauschen ohne Senden: zeigt, ob Piano ohne App überhaupt
-    // autonom sendet. L2/L3 = Status-Form mit/ohne Payload-Varianten,
-    // L4 = Status-Form mit Request-ID im ID-Feld.
-    let st = |hi: u8, lo: u8| {
-        vec![0xF0u8, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, hi, lo, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7]
-    };
-    variants.push(("L1 Baseline: lauschen, nichts senden", vec![]));
-    variants.push(("L2 Status-Form ID 00 00", vec![st(0x00, 0x00)]));
-    variants.push(("L3 Status-Form ID 7F 7F", vec![st(0x7F, 0x7F)]));
-    variants.push(("L4 Status-Form ID 25 00", vec![st(0x25, 0x00)]));
-    variants.push(("L5 Status-Kurz 0F 01 25 00 F7", vec![vec![0xF0u8, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, 0x25, 0x00, 0xF7]]));
-    variants.push(("L6 Doppeltest L3 zweimal", vec![st(0x7F, 0x7F), st(0x7F, 0x7F)]));
+    // Hypothese 26.10. (Probe v5, REA-Beleg get_AppLinkPianoControllerSysEx):
+    // Request unterscheidet sich vom Status-Rahmen durch byte10: 00=Request,
+    // 02=Piano-Status. Unsere bisherigen Sende hatten 02 -> Piano sah es als
+    // Status-SCHREIBEN und quittierte nur mit 7F 00. Jetzt echte Request-Form:
+    // F0 44 7E 7E 7F 0F 01 <IDhi> <IDlo> 01 00 01 00 <2B Wert> F7 (16B).
+    let rq = |hi: u8, lo: u8| vec![0xF0u8, 0x44, 0x7E, 0x7E, 0x7F, 0x0F, 0x01, hi, lo, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0xF7];
+    variants.push(("Q1 Request 16B ID 25 00", vec![rq(0x25, 0x00)]));
+    variants.push(("Q2 Request 16B ID 07 01", vec![rq(0x07, 0x01)]));
+    variants.push(("Q3 Request 16B ID 10 10", vec![rq(0x10, 0x10)]));
+    variants.push(("Q4 Request 16B ID 00 00", vec![rq(0x00, 0x00)]));
+    variants.push(("Q5 Request 16B ID 48 00", vec![rq(0x48, 0x00)]));
+    variants.push(("Q6 Doppeltest Q1 zweimal", vec![rq(0x25, 0x00), rq(0x07, 0x01)]));
     println!("Status-Probe: {} Varianten …", variants.len());
     for (i, (label, msgs)) in variants.iter().enumerate() {
         let Some((mut t, _name)) = open_piano_port() else {
